@@ -1,5 +1,4 @@
-// MeetingPage.jsx
-import { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   MeetingProvider,
   useMeeting,
@@ -9,19 +8,19 @@ import { useParams, useSearchParams } from "react-router-dom";
 
 function ParticipantView({ participantId }) {
   const { webcamStream, webcamOn } = useParticipant(participantId);
-  const videoRef = React.useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    console.log("🎥 useEffect called for participant:", participantId);
-    console.log("   webcamOn:", webcamOn, " | webcamStream:", webcamStream);
+    console.log("🎥 useEffect for:", participantId);
+    console.log("   webcamOn:", webcamOn, "| webcamStream:", webcamStream);
 
     if (webcamOn && webcamStream && videoRef.current) {
       const mediaStream = new MediaStream();
       mediaStream.addTrack(webcamStream.track);
       videoRef.current.srcObject = mediaStream;
-      console.log("✅ Stream attached to video element for:", participantId);
+      console.log("✅ Stream attached for:", participantId);
     } else {
-      console.log("⚠️ Stream not ready yet for:", participantId);
+      console.log("⚠️ Stream not ready for:", participantId);
     }
   }, [webcamStream, webcamOn]);
 
@@ -67,7 +66,7 @@ export default function MeetingPage() {
 
   console.log("📦 MeetingPage loaded");
   console.log("🆔 meetingId:", meetingId);
-  console.log("🎟️ token from URL:", token);
+  console.log("🎟️ token:", token);
 
   return (
     <MeetingProvider
