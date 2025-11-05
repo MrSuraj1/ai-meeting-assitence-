@@ -5,18 +5,21 @@ import { MeetingView } from "./MeetingView";
 
 function JoinMeeting() {
   const { meetingId } = useParams();
+  const token = import.meta.env.VITE_VIDEOSDK_TOKEN; // if using Vite
 
   return (
     <MeetingProvider
       config={{
-        meetingId: meetingId,
+        meetingId,
         name: "Guest User",
         micEnabled: true,
         webcamEnabled: true,
       }}
-      token={process.env.REACT_APP_VIDEOSDK_TOKEN}
+      token={token}
     >
-      <MeetingConsumer>{() => <MeetingView meetingId={meetingId} />}</MeetingConsumer>
+      <MeetingConsumer>
+        {() => <MeetingView meetingId={meetingId} />}
+      </MeetingConsumer>
     </MeetingProvider>
   );
 }

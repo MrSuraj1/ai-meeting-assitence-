@@ -2,28 +2,32 @@ import React, { useEffect } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
 
 const ParticipantView = ({ participantId }) => {
-  const { webcamStream, micStream, isWebcamOn, isMicOn } =
-    useParticipant(participantId);
-
+  const { webcamStream, isWebcamOn } = useParticipant(participantId);
   const videoRef = React.useRef(null);
 
   useEffect(() => {
-    if (isWebcamOn && videoRef.current) {
+    if (isWebcamOn && webcamStream && videoRef.current) {
       const mediaStream = new MediaStream();
       mediaStream.addTrack(webcamStream.track);
       videoRef.current.srcObject = mediaStream;
-      videoRef.current.play();
     }
   }, [webcamStream, isWebcamOn]);
 
   return (
-    <div>
-      <video ref={videoRef} width="300" height="200" autoPlay playsInline />
+    <div className="p-3">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="rounded-lg w-64 h-48 border"
+      />
+      <p className="text-center text-sm mt-1">{participantId}</p>
     </div>
   );
 };
 
-export const MeetingView = ({ meetingId }) => {
+export const MeetingView = () => {
   const { join, participants } = useMeeting();
 
   useEffect(() => {
@@ -31,7 +35,7 @@ export const MeetingView = ({ meetingId }) => {
   }, []);
 
   return (
-    <div className="flex flex-wrap">
+    <div className="flex flex-wrap justify-center gap-4 mt-6">
       {[...participants.keys()].map((id) => (
         <ParticipantView key={id} participantId={id} />
       ))}
