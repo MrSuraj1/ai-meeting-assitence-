@@ -2,7 +2,7 @@
 import React from "react";
 import { MeetingProvider } from "@videosdk.live/react-sdk";
 import { useParams, useSearchParams } from "react-router-dom";
-import { MeetingView } from "../components/MeetingView";
+import { MeetingView } from "./MeetingView";
 
 export default function MeetingPage() {
   const { meetingId } = useParams();
