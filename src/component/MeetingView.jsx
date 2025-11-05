@@ -5,13 +5,13 @@ const ParticipantView = ({ participantId }) => {
   const { webcamStream, isWebcamOn } = useParticipant(participantId);
   const videoRef = React.useRef(null);
 
-  useEffect(() => {
-    if (isWebcamOn && webcamStream && videoRef.current) {
-      const mediaStream = new MediaStream();
-      mediaStream.addTrack(webcamStream.track);
-      videoRef.current.srcObject = mediaStream;
-    }
-  }, [webcamStream, isWebcamOn]);
+useEffect(() => {
+  if (webcamOn && webcamStream && videoRef.current) {
+    const mediaStream = new MediaStream();
+    mediaStream.addTrack(webcamStream.track);
+    videoRef.current.srcObject = mediaStream;
+  }
+}, [webcamStream, webcamOn]);
 
   return (
     <div className="p-3">
