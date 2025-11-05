@@ -53,17 +53,16 @@ export default function MeetingPage() {
   const token = params.get("token");
 
   return (
-    <MeetingProvider
-      config={{
-        meetingId,
-        micEnabled: true,
-        webcamEnabled: true,
-        name: "User",
-      }}
-      token={token}
-    >
-      <h1 className="text-2xl text-center mt-4">Meeting ID: {meetingId}</h1>
-      <MeetingView />
-    </MeetingProvider>
+ <MeetingProvider
+  config={{
+    meetingId,
+    micEnabled: true,
+    webcamEnabled: true,
+    name: "User",
+  }}
+  token={token}
+>
+  <MeetingView />
+</MeetingProvider>
   );
 }
