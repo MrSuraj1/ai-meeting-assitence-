@@ -1,3 +1,4 @@
+// MeetingPage.jsx
 import { useEffect } from "react";
 import {
   MeetingProvider,
@@ -8,19 +9,26 @@ import { useParams, useSearchParams } from "react-router-dom";
 
 function ParticipantView({ participantId }) {
   const { webcamStream, webcamOn } = useParticipant(participantId);
-  const videoRef = useEffect(() => {
-    if (webcamOn && webcamStream) {
+  const videoRef = React.useRef(null);
+
+  useEffect(() => {
+    console.log("🎥 useEffect called for participant:", participantId);
+    console.log("   webcamOn:", webcamOn, " | webcamStream:", webcamStream);
+
+    if (webcamOn && webcamStream && videoRef.current) {
       const mediaStream = new MediaStream();
       mediaStream.addTrack(webcamStream.track);
-      const video = document.getElementById(`video-${participantId}`);
-      if (video) video.srcObject = mediaStream;
+      videoRef.current.srcObject = mediaStream;
+      console.log("✅ Stream attached to video element for:", participantId);
+    } else {
+      console.log("⚠️ Stream not ready yet for:", participantId);
     }
   }, [webcamStream, webcamOn]);
 
   return (
     <div className="p-4">
       <video
-        id={`video-${participantId}`}
+        ref={videoRef}
         autoPlay
         playsInline
         muted
@@ -35,8 +43,13 @@ function MeetingView() {
   const { join, participants } = useMeeting();
 
   useEffect(() => {
+    console.log("🚀 Joining meeting...");
     join();
   }, []);
+
+  useEffect(() => {
+    console.log("👥 Participants:", [...participants.keys()]);
+  }, [participants]);
 
   return (
     <div className="flex flex-wrap justify-center gap-4 mt-6">
@@ -52,17 +65,21 @@ export default function MeetingPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
 
+  console.log("📦 MeetingPage loaded");
+  console.log("🆔 meetingId:", meetingId);
+  console.log("🎟️ token from URL:", token);
+
   return (
- <MeetingProvider
-  config={{
-    meetingId,
-    micEnabled: true,
-    webcamEnabled: true,
-    name: "User",
-  }}
-  token={token}
->
-  <MeetingView />
-</MeetingProvider>
+    <MeetingProvider
+      config={{
+        meetingId,
+        micEnabled: true,
+        webcamEnabled: true,
+        name: "User",
+      }}
+      token={token}
+    >
+      <MeetingView />
+    </MeetingProvider>
   );
 }
