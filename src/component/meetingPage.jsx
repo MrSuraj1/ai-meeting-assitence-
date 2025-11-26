@@ -8,14 +8,17 @@ export default function MeetingPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
 
-  console.log("📦 MeetingPage loaded", { meetingId, token: token?.substring(0, 20) + "..." });
+  console.log("📦 MeetingPage loaded", {
+    meetingId,
+    token: token?.substring(0, 20) + "...",
+  });
 
   return (
     <MeetingProvider
       config={{
         meetingId,
-        micEnabled: true,
-        webcamEnabled: true,
+        micEnabled: false,      // ❗ FIXED
+        webcamEnabled: false,   // ❗ FIXED
         name: "User",
       }}
       token={token}
