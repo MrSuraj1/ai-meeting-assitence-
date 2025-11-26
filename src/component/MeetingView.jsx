@@ -46,7 +46,7 @@ export const MeetingView = () => {
     setTimeout(() => {
       console.log("🎥 Forcing webcam enable...");
       enableWebcam();
-    }, 1000);
+    }, 500);
   }, []);
 
   useEffect(() => {
