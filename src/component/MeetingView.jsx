@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+// 📁 src/components/MeetingView.jsx
+import React, { useEffect, useRef } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
 
 // 🔹 Individual Participant video view
@@ -7,10 +8,16 @@ const ParticipantView = ({ participantId }) => {
   const videoRef = useRef(null);
 
   useEffect(() => {
+    console.log("🎥 useEffect for:", participantId);
+    console.log("   webcamOn:", webcamOn, "| webcamStream:", webcamStream);
+
     if (webcamOn && webcamStream && videoRef.current) {
       const mediaStream = new MediaStream();
       mediaStream.addTrack(webcamStream.track);
       videoRef.current.srcObject = mediaStream;
+      console.log("✅ Stream attached for:", participantId);
+    } else {
+      console.log("⚠️ Stream not ready for:", participantId);
     }
   }, [webcamStream, webcamOn]);
 
@@ -31,34 +38,25 @@ const ParticipantView = ({ participantId }) => {
 // 🔹 Main Meeting View
 export const MeetingView = () => {
   const { join, participants, enableWebcam } = useMeeting();
-  const [joined, setJoined] = useState(false);
 
-  // 🟢 Join meeting auto
   useEffect(() => {
+    console.log("🚀 Joining meeting...");
     join();
-    setJoined(true);
+
+    setTimeout(() => {
+      console.log("🎥 Forcing webcam enable...");
+      enableWebcam();
+      console.log("🎥 Forcing webcamle...");
+    }, 500);
   }, []);
 
-  // 🟢 Enable webcam only after USER CLICK
-  const handleStartCamera = () => {
-    console.log("🎥 User clicked → enabling webcam...");
-    enableWebcam();
-  };
+  useEffect(() => {
+    console.log("👥 Participants:", [...participants.keys()]);
+  }, [participants]);
 
   return (
     <div className="flex flex-col items-center mt-6">
       <h1 className="text-2xl font-semibold mb-4">🎥 Live Meeting</h1>
-
-      {/* 👇 Button required for HTTPS sites */}
-      {joined && (
-        <button
-          onClick={handleStartCamera}
-          className="px-5 py-2 bg-blue-600 text-white rounded-md shadow-md mb-4"
-        >
-          Start Camera
-        </button>
-      )}
-
       <div className="flex flex-wrap justify-center gap-4">
         {[...participants.keys()].map((id) => (
           <ParticipantView key={id} participantId={id} />
