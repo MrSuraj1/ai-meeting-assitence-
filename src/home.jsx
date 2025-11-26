@@ -1,56 +1,33 @@
-// 📁 src/pages/HomePage.jsx
-import { useState } from "react";
-import axios from "axios";
+import React from "react";
+import API from "../api";
 import { useNavigate } from "react-router-dom";
 
 export default function HomePage() {
-  const [meetingId, setMeetingId] = useState("");
   const navigate = useNavigate();
 
   const createMeeting = async () => {
     try {
       console.log("🎟️ Getting token...");
+      const { data: tokenRes } = await API.get("/get-token");
+      console.log("✅ Token received:", tokenRes.token?.substring(0, 40) + "...");
 
-      // 1️⃣ Get VideoSDK token from backend
-      const tokenRes = await axios.get("https://ai-backend-zczd.onrender.com/api/get-token");
-      const token = tokenRes.data?.token;
-
-      if (!token) throw new Error("Token not received!");
-
-      console.log("✅ Token received:", token);
-
-      // 2️⃣ Create meeting using that token
       console.log("🧩 Creating meeting...");
-      const meetRes = await axios.post(
-        "https://api.videosdk.live/v2/rooms",  // ✅ Direct VideoSDK endpoint
-        {},
-        {
-          headers: {
-            Authorization: token,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      const meetingId = meetRes.data.roomId || meetRes.data.meetingId;
-      console.log("🎉 Meeting created:", meetingId);
-
-      setMeetingId(meetingId);
-
-      // 3️⃣ Redirect user to meeting page
-      navigate(`/meeting/${meetingId}?token=${token}`);
+      const { data: meetRes } = await API.post("/create-meeting", { token: tokenRes.token });
+      const id = meetRes.roomId || meetRes.meetingId;
+      console.log("🎉 Meeting created:", id);
+      navigate(`/meeting/${id}?token=${encodeURIComponent(tokenRes.token)}`);
     } catch (err) {
-      console.error("❌ Error creating meeting:", err);
-      alert("Failed to create meeting. Please check your backend token or network.");
+      console.error("❌ Error creating meeting:", err.response?.data || err.message || err);
+      alert("Create meeting failed — check console for details.");
     }
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <h1 className="text-3xl font-bold mb-4">🎥 AI Meeting Dashboard</h1>
+    <div className="min-h-screen flex flex-col items-center justify-center">
+      <h1 className="text-3xl font-bold mb-6">🎥 AI Meeting Dashboard</h1>
       <button
         onClick={createMeeting}
-        className="px-6 py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition"
+        className="px-6 py-3 bg-black text-white rounded-lg"
       >
         Create Meeting
       </button>

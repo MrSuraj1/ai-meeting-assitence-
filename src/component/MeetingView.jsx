@@ -1,87 +1,84 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
 
-// ------------------- PARTICIPANT VIEW -------------------
-const ParticipantView = ({ participantId }) => {
+// ParticipantView
+function ParticipantView({ participantId }) {
   const { webcamStream, webcamOn } = useParticipant(participantId);
-  const videoRef = useRef(null);
+  const ref = useRef(null);
 
   useEffect(() => {
-    if (webcamOn && webcamStream && videoRef.current) {
-      const mediaStream = new MediaStream();
-      mediaStream.addTrack(webcamStream.track);
-      videoRef.current.srcObject = mediaStream;
-      console.log(`🎥 Video attached for: ${participantId}`);
+    console.log("🎥 useEffect for:", participantId, { webcamOn, webcamStream });
+    if (webcamOn && webcamStream && ref.current) {
+      try {
+        const ms = new MediaStream();
+        ms.addTrack(webcamStream.track);
+        ref.current.srcObject = ms;
+      } catch (err) {
+        console.error("Error attaching stream:", err);
+      }
     }
-  }, [webcamOn, webcamStream]);
+  }, [webcamStream, webcamOn, participantId]);
 
   return (
     <div className="p-3 text-center">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="rounded-lg w-64 h-48 border shadow-md bg-black"
-      />
-      <p className="mt-2 font-medium text-sm">{participantId}</p>
+      <video ref={ref} autoPlay playsInline muted className="w-64 h-48 bg-black rounded" />
+      <div className="mt-2 text-sm">{participantId}</div>
     </div>
   );
-};
+}
 
-// ------------------- MAIN MEETING VIEW -------------------
-export const MeetingView = () => {
-  const { join, participants, enableWebcam, isWebcamOn } = useMeeting();
+// Main MeetingView
+export function MeetingView() {
+  const { join, participants, enableWebcam, leave } = useMeeting();
   const [joined, setJoined] = useState(false);
-  const [cameraError, setCameraError] = useState(null);
+  const [camError, setCamError] = useState(null);
 
-  // Join meeting once
   useEffect(() => {
-    console.log("🚀 Joining meeting...");
-    join();
-    setJoined(true);
-  }, []);
+    (async () => {
+      try {
+        console.log("🚀 calling join()");
+        await join();
+        setJoined(true);
+        console.log("✅ join() success");
+      } catch (err) {
+        console.error("❌ join() failed:", err);
+      }
+    })();
+    // cleanup - leave when unmount
+    return () => leave && leave();
+  }, [join, leave]);
 
-  // Handle camera ON request
-  const handleStartCamera = async () => {
-    console.log("🎥 Trying to enable webcam...");
-
+  const startCamera = async () => {
+    setCamError(null);
     try {
-      await enableWebcam();
-      console.log("✅ Webcam enabled");
+      console.log("🎥 enabling webcam via SDK...");
+      const r = await enableWebcam();
+      console.log("🎯 enableWebcam returned:", r);
     } catch (err) {
       console.error("❌ enableWebcam error:", err);
-      setCameraError(err.message);
+      setCamError(err);
+      // quick browser-level fallback check:
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ video: true });
+        s.getTracks().forEach(t => t.stop());
+        console.log("✅ browser getUserMedia succeeded separately");
+      } catch (gmErr) {
+        console.warn("❌ browser getUserMedia failed:", gmErr);
+      }
     }
   };
 
-  // Log participants cleanly
-  useEffect(() => {
-    console.log("👥 Participants now =", [...participants.keys()]);
-  }, [participants]);
-
   return (
-    <div className="flex flex-col items-center mt-6">
-      <h1 className="text-2xl font-semibold mb-4">🎥 Live Meeting</h1>
+    <div>
+      <div className="mb-4">
+        <button onClick={startCamera} className="px-4 py-2 bg-blue-600 text-white rounded mr-2">Start Camera</button>
+        <button onClick={() => console.log("participants:", [...participants.keys()])} className="px-3 py-1 bg-gray-200 rounded">Debug</button>
+        {camError && <div className="text-red-600 mt-2">Camera error: {String(camError.message || camError)}</div>}
+      </div>
 
-      {joined && (
-        <button
-          onClick={handleStartCamera}
-          className="px-5 py-2 bg-blue-600 text-white rounded-md shadow-md mb-4"
-        >
-          {isWebcamOn ? "Camera On" : "Start Camera"}
-        </button>
-      )}
-
-      {cameraError && (
-        <p className="text-red-500 mb-3">Camera Error: {cameraError}</p>
-      )}
-
-      <div className="flex flex-wrap justify-center gap-4">
-        {[...participants.keys()].map((id) => (
-          <ParticipantView key={id} participantId={id} />
-        ))}
+      <div className="flex flex-wrap gap-4">
+        {[...participants.keys()].map(id => <ParticipantView key={id} participantId={id} />)}
       </div>
     </div>
   );
-};
+}
