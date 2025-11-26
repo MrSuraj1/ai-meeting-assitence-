@@ -17,8 +17,8 @@ export default function MeetingPage() {
     <MeetingProvider
       config={{
         meetingId,
-        micEnabled: false,      // ❗ FIXED
-        webcamEnabled: false,   // ❗ FIXED
+        micEnabled: true,      // ❗ FIXED
+        webcamEnabled: true,   // ❗ FIXED
         name: "User",
       }}
       token={token}
