@@ -1,3 +1,4 @@
+// src/component/meetingPage.jsx
 import React from "react";
 import { MeetingProvider } from "@videosdk.live/react-sdk";
 import { useParams, useSearchParams } from "react-router-dom";
@@ -6,19 +7,20 @@ import { MeetingView } from "./MeetingView";
 export default function MeetingPage() {
   const { meetingId } = useParams();
   const [params] = useSearchParams();
-  const token = params.get("token");
+  const rawToken = params.get("token");
+  const token = rawToken ? decodeURIComponent(rawToken) : null;
 
   console.log("📦 MeetingPage loaded", {
     meetingId,
-    token: token?.substring(0, 20) + "...",
+    token: token ? token.substring(0, 20) + "..." : "NO_TOKEN",
   });
 
   return (
     <MeetingProvider
       config={{
         meetingId,
-        micEnabled: true,      // ❗ FIXED
-        webcamEnabled: true,   // ❗ FIXED
+        micEnabled: false,
+        webcamEnabled: false,
         name: "User",
       }}
       token={token}

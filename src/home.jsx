@@ -1,3 +1,4 @@
+// src/home.jsx
 import React from "react";
 import API from "./api";
 import { useNavigate } from "react-router-dom";
@@ -9,13 +10,18 @@ export default function HomePage() {
     try {
       console.log("🎟️ Getting token...");
       const { data: tokenRes } = await API.get("/get-token");
-      console.log("✅ Token received:", tokenRes.token?.substring(0, 40) + "...");
+      const token = tokenRes?.token;
+      if (!token) throw new Error("No token returned from backend");
+      console.log("✅ Token received:", token.substring(0, 40) + "...");
 
       console.log("🧩 Creating meeting...");
-      const { data: meetRes } = await API.post("/create-meeting", { token: tokenRes.token });
-      const id = meetRes.roomId || meetRes.meetingId;
+      const { data: meetRes } = await API.post("/create-meeting", { token });
+      const id = meetRes.roomId || meetRes.meetingId || meetRes.id;
+      if (!id) throw new Error("No meeting id in response: " + JSON.stringify(meetRes));
       console.log("🎉 Meeting created:", id);
-      navigate(`/meeting/${id}?token=${encodeURIComponent(tokenRes.token)}`);
+
+      // encode token for URL safety
+      navigate(`/meeting/${id}?token=${encodeURIComponent(token)}`);
     } catch (err) {
       console.error("❌ Error creating meeting:", err.response?.data || err.message || err);
       alert("Create meeting failed — check console for details.");
@@ -31,6 +37,10 @@ export default function HomePage() {
       >
         Create Meeting
       </button>
+
+      <div className="mt-6">
+        <a className="text-sm text-blue-600" href="/join">Join an existing meeting</a>
+      </div>
     </div>
   );
 }

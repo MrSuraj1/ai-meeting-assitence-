@@ -1,3 +1,4 @@
+// src/pages/join.jsx
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../api";
@@ -8,10 +9,14 @@ export default function JoinPage() {
 
   const joinMeeting = async () => {
     try {
+      if (!meetingId.trim()) return alert("Enter meeting id");
       const { data: tokenRes } = await API.get("/get-token");
-      navigate(`/meeting/${meetingId}?token=${tokenRes.token}`);
+      const token = tokenRes?.token;
+      if (!token) throw new Error("Failed to get token");
+      navigate(`/meeting/${meetingId.trim()}?token=${encodeURIComponent(token)}`);
     } catch (err) {
       console.error(err);
+      alert("Could not join — see console");
     }
   };
 
