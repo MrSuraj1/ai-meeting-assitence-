@@ -1,32 +1,44 @@
-import React from "react";
+import { useParams } from "react-router-dom";
 import { MeetingProvider } from "@videosdk.live/react-sdk";
-import { useParams, useSearchParams } from "react-router-dom";
-import  MeetingView  from "./MeetingView";
+import MeetingView from "./MeetingView";
 
 export default function MeetingPage() {
-  const { meetingId } = useParams();
-  const [params] = useSearchParams();
-  const token = params.get("token");
+  console.log("📥 MeetingPage Loaded...");
 
-  console.log("📦 MeetingPage loaded", {
+  const { meetingId } = useParams();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const tokenFromUrl = urlParams.get("token");
+
+  const token = tokenFromUrl || sessionStorage.getItem("token");
+
+  console.log("📦 MeetingPage Data:", {
     meetingId,
-    token: token?.substring(0, 20) + "...",
+    tokenFromUrl,
+    token,
   });
+
+  if (!meetingId) {
+    return <h2 style={{ color: "red" }}>❌ Invalid Meeting ID</h2>;
+  }
+
+  if (!token) {
+    return <h2 style={{ color: "red" }}>❌ Token missing</h2>;
+  }
+
+  sessionStorage.setItem("token", token);
 
   return (
     <MeetingProvider
       config={{
         meetingId,
-        micEnabled: false,      // ❗ FIXED
-        webcamEnabled: false,   // ❗ FIXED
-        name: "User",
+        micEnabled: true,
+        webcamEnabled: true,
+        name: "Suraj",
       }}
       token={token}
     >
-      <div className="p-6">
-        <h2 className="mb-4">Meeting: <code>{meetingId}</code></h2>
-        <MeetingView />
-      </div>
+      <MeetingView meetingId={meetingId} token={token} />
     </MeetingProvider>
   );
 }
