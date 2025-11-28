@@ -1,25 +1,134 @@
-import { useMeeting } from "@videosdk.live/react-sdk";
+import React, { useEffect, useState } from "react";
+import {
+  useMeeting,
+  useParticipant,
+} from "@videosdk.live/react-sdk";
 
-export default function MeetingView() {
-  const meeting = useMeeting();
+// ----------------------------
+// Each Participant Tile UI
+// ----------------------------
+function ParticipantTile({ participantId }) {
+  const {
+    webcamStream,
+    micOn,
+    webcamOn,
+    isLocal,
+    displayName,
+  } = useParticipant(participantId);
 
-  console.log("🧩 useMeeting returned:", meeting);
+  const videoRef = React.useRef(null);
 
-  if (!meeting) return <h2>⚠️ Meeting loading...</h2>;
-
-  const { join } = meeting;
+  useEffect(() => {
+    if (webcamStream && videoRef.current) {
+      const mediaStream = new MediaStream();
+      mediaStream.addTrack(webcamStream.track);
+      videoRef.current.srcObject = mediaStream;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [webcamStream]);
 
   return (
-    <div>
-      <button
-        onClick={() => {
-          console.log("🚀 Joining meeting...");
-          join();
-        }}
-        className="px-4 py-2 bg-black text-white rounded"
-      >
-        Join Meeting
-      </button>
+    <div className="border rounded-lg p-2 bg-gray-900 text-white relative">
+      {webcamOn ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          className="w-full h-44 rounded-lg"
+        />
+      ) : (
+        <div className="w-full h-44 bg-gray-700 rounded-lg flex items-center justify-center">
+          <span className="text-xl">{displayName.charAt(0)}</span>
+        </div>
+      )}
+
+      <div className="absolute bottom-1 left-2 bg-black/60 text-xs px-2 rounded">
+        {displayName} {isLocal && "(You)"}
+      </div>
+
+      {!micOn && (
+        <div className="absolute top-2 right-2 bg-red-600 px-2 py-1 text-xs rounded">
+          Mic Off
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ----------------------------
+// Main Meeting View UI
+// ----------------------------
+export default function MeetingView() {
+  const {
+    participants,
+    join,
+    toggleMic,
+    toggleWebcam,
+    toggleScreenShare,
+    leave,
+    localParticipant,
+  } = useMeeting();
+
+  const [joined, setJoined] = useState(false);
+
+  return (
+    <div className="p-4">
+      {!joined ? (
+        <div className="flex flex-col items-center justify-center h-screen">
+          <button
+            onClick={() => {
+              join();
+              setJoined(true);
+            }}
+            className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xl"
+          >
+            🚀 Join Meeting
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* Top Controls */}
+          <div className="flex justify-center gap-4 mb-4">
+            <button
+              onClick={toggleMic}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg"
+            >
+              🎤 Toggle Mic
+            </button>
+
+            <button
+              onClick={toggleWebcam}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg"
+            >
+              📷 Toggle Camera
+            </button>
+
+            <button
+              onClick={toggleScreenShare}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg"
+            >
+              🖥 Share Screen
+            </button>
+
+            <button
+              onClick={leave}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg"
+            >
+              ❌ Leave
+            </button>
+          </div>
+
+          {/* Participants Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {[...participants.keys()].map((participantId) => (
+              <ParticipantTile
+                key={participantId}
+                participantId={participantId}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
