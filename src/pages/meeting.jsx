@@ -1,31 +1,38 @@
-import { useParams, useSearchParams } from "react-router-dom";
-import { MeetingProvider, MeetingConsumer } from "@videosdk.live/react-sdk";
-import ParticipantView from "../components/ParticipantView";
+import React, { useState } from "react";
+import MeetingUI from "../component/MeetingView";
 
-export default function MeetingPage() {
-  const { meetingId } = useParams();
-  const [params] = useSearchParams();
-  const name = params.get("name");
+export default function MeetingPage1() {
+  const [name, setName] = useState("");
+  const [joined, setJoined] = useState(false);
 
   return (
-    <MeetingProvider
-      config={{
-        meetingId,
-        micEnabled: true,
-        webcamEnabled: true,
-        name: name || "Guest",
-      }}
-      token={"df83590d-a877-4446-a58b-d7a23534c299"}
-    >
-      <MeetingConsumer>
-        {({ participants }) => (
-          <div className="flex flex-wrap">
-            {[...participants.keys()].map((id) => (
-              <ParticipantView key={id} participantId={id} />
-            ))}
-          </div>
-        )}
-      </MeetingConsumer>
-    </MeetingProvider>
+    <div className="flex items-center justify-center h-screen bg-gray-100">
+      {!joined ? (
+        <div className="bg-white p-6 rounded-xl shadow-md w-80">
+          <h2 className="text-xl font-semibold text-center mb-4">
+            Enter Your Name
+          </h2>
+
+          <input
+            className="w-full border p-2 rounded mb-3"
+            placeholder="Your Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+
+          <button
+            onClick={() => {
+              if (!name.trim()) return;
+              setJoined(true);
+            }}
+            className="w-full bg-blue-600 text-white p-2 rounded"
+          >
+            Join Meeting
+          </button>
+        </div>
+      ) : (
+        <MeetingUI userName={name} />
+      )}
+    </div>
   );
 }

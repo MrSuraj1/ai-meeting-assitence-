@@ -1,44 +1,43 @@
-import { useParams } from "react-router-dom";
+// src/component/MeetingPage.jsx
+import React from "react";
 import { MeetingProvider } from "@videosdk.live/react-sdk";
-import MeetingView from "./MeetingView";
+import MeetingUI from "./MeetingView";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
 
 export default function MeetingPage() {
-  console.log("📥 MeetingPage Loaded...");
-
   const { meetingId } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const query = new URLSearchParams(location.search);
+  const token = query.get("token") || sessionStorage.getItem("token");
 
-  const urlParams = new URLSearchParams(window.location.search);
-  const tokenFromUrl = urlParams.get("token");
+  React.useEffect(() => {
+    if (!token) {
+      alert("Token missing. Redirecting home.");
+      navigate("/");
+    } else {
+      // save token for refresh
+      sessionStorage.setItem("token", token);
+    }
+  }, [token]);
 
-  const token = tokenFromUrl || sessionStorage.getItem("token");
-
-  console.log("📦 MeetingPage Data:", {
-    meetingId,
-    tokenFromUrl,
-    token,
-  });
-
-  if (!meetingId) {
-    return <h2 style={{ color: "red" }}>❌ Invalid Meeting ID</h2>;
+  if (!meetingId || !token) {
+    return <div className="p-6 text-red-600">Invalid meeting link.</div>;
   }
-
-  if (!token) {
-    return <h2 style={{ color: "red" }}>❌ Token missing</h2>;
-  }
-
-  sessionStorage.setItem("token", token);
 
   return (
     <MeetingProvider
+      token={token}
       config={{
         meetingId,
-        micEnabled: true,
-        webcamEnabled: true,
-        name: "Suraj",
+        micEnabled: false,
+        webcamEnabled: false,
+        name: "Suraj", // you can replace with actual user name
       }}
-      token={token}
     >
-      <MeetingView meetingId={meetingId} token={token} />
+      <div className="min-h-screen bg-gray-100">
+        <MeetingUI meetingId={meetingId} token={token} />
+      </div>
     </MeetingProvider>
   );
 }
