@@ -1,30 +1,32 @@
-// src/MeetingPage.jsx
-import React, { useEffect } from "react";
-import { useParams, useLocation, useNavigate } from "react-router-dom";
-import MeetingView from "./MeetingView";
+import React from "react";
+import { MeetingProvider } from "@videosdk.live/react-sdk";
+import { useParams, useSearchParams } from "react-router-dom";
+import  MeetingView  from "./MeetingView";
 
 export default function MeetingPage() {
-  const { id } = useParams();
-  const location = useLocation();
-  const navigate = useNavigate();
+  const { meetingId } = useParams();
+  const [params] = useSearchParams();
+  const token = params.get("token");
 
-  // query params se token nikalo
-  const query = new URLSearchParams(location.search);
-  const token = query.get("token");
-
-  console.log("📦 MeetingPage loaded", { meetingId: id, token });
-
-  useEffect(() => {
-    if (!token) {
-      console.error("❌ ERROR: Token missing in MeetingPage");
-      alert("Token missing — returning to home");
-      navigate("/");
-    }
-  }, [token]);
+  console.log("📦 MeetingPage loaded", {
+    meetingId,
+    token: token?.substring(0, 20) + "...",
+  });
 
   return (
-    <div className="p-4">
-      <MeetingView meetingId={id} token={token} />
-    </div>
+    <MeetingProvider
+      config={{
+        meetingId,
+        micEnabled: false,      // ❗ FIXED
+        webcamEnabled: false,   // ❗ FIXED
+        name: "User",
+      }}
+      token={token}
+    >
+      <div className="p-6">
+        <h2 className="mb-4">Meeting: <code>{meetingId}</code></h2>
+        <MeetingView />
+      </div>
+    </MeetingProvider>
   );
 }
