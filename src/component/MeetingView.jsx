@@ -10,6 +10,7 @@ import {
 function ParticipantTile({ participantId }) {
   const {
     webcamStream,
+    micStream,
     micOn,
     webcamOn,
     isLocal,
@@ -17,7 +18,9 @@ function ParticipantTile({ participantId }) {
   } = useParticipant(participantId);
 
   const videoRef = React.useRef(null);
+  const audioRef = React.useRef(null);
 
+  // VIDEO
   useEffect(() => {
     if (webcamStream && videoRef.current) {
       const mediaStream = new MediaStream();
@@ -27,8 +30,20 @@ function ParticipantTile({ participantId }) {
     }
   }, [webcamStream]);
 
+  // AUDIO FIX 🔥
+  useEffect(() => {
+    if (micStream && audioRef.current) {
+      const media = new MediaStream();
+      media.addTrack(micStream.track);
+      audioRef.current.srcObject = media;
+      audioRef.current.play().catch(err => console.log(err));
+    }
+  }, [micStream]);
+
   return (
     <div className="border rounded-lg p-2 bg-gray-900 text-white relative">
+
+      {/* VIDEO UI */}
       {webcamOn ? (
         <video
           ref={videoRef}
@@ -41,6 +56,9 @@ function ParticipantTile({ participantId }) {
           <span className="text-xl">{displayName.charAt(0)}</span>
         </div>
       )}
+
+      {/* AUDIO (HIDDEN) */}
+      <audio ref={audioRef} autoPlay playsInline />
 
       <div className="absolute bottom-1 left-2 bg-black/60 text-xs px-2 rounded">
         {displayName} {isLocal && "(You)"}
