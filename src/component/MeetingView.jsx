@@ -244,7 +244,7 @@ export default function MeetingUI({ meetingId, token }) {
     </div>
 
     {/* RIGHT (CHAT) */}
-    <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l p-4">
+    <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l p-4 h-56">
       <h3 className="font-semibold">Chat</h3>
 
       <button
