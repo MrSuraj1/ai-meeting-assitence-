@@ -1,283 +1,705 @@
-// src/component/MeetingUI.jsx  
-import React, { useEffect, useRef, useState } from "react";
+// src/component/MeetingUI.jsx
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
-import { FiMic, FiVideo, FiMonitor, FiSend } from "react-icons/fi";
+import { FiMic, FiVideo, FiMonitor } from "react-icons/fi";
+import { FaHandPaper, FaSignOutAlt, FaStopCircle, FaExpandAlt, FaCompressAlt, FaVideo, FaRegStopCircle, FaMicrophoneAlt, FaMagic } from "react-icons/fa"; 
 
-console.log("📌 MeetingUI component loaded");
+// Language Options for Subtitle Translation (No change)
+const LANGUAGE_OPTIONS = [
+    { code: 'en', name: 'English' },
+    { code: 'hi', name: 'Hindi' },
+    { code: 'es', name: 'Spanish' },
+    { code: 'fr', name: 'French' },
+    { code: 'de', name: 'German' },
+    { code: 'auto', name: 'Original (No Translation)' },
+];
 
-function ParticipantTile({ participantId, spotlightMode, activeSpeakerId }) {
-  console.log("👤 Rendering ParticipantTile for:", participantId);
-
-  const {
-    webcamStream,
-    micStream,
-    webcamOn,
-    micOn,
-    isLocal,
-    displayName,
-    screenShareStream
-  } = useParticipant(participantId);
-
-  const videoRef = useRef(null);
-  const audioRef = useRef(null);
-  const screenRef = useRef(null);
-
-  // Webcam
-  useEffect(() => {
-    console.log("🎥 Webcam changed for", participantId, webcamStream);
-
-    if (webcamStream && videoRef.current) {
-      const ms = new MediaStream();
-      ms.addTrack(webcamStream.track);
-      videoRef.current.srcObject = ms;
-      videoRef.current.play().catch((e) => console.warn("Video play error", e));
-    }
-  }, [webcamStream]);
-
-  // Mic
-  useEffect(() => {
-    console.log("🎤 Mic stream changed for", participantId, micStream);
-
-    if (micStream && audioRef.current) {
-      const ms = new MediaStream();
-      ms.addTrack(micStream.track);
-      audioRef.current.srcObject = ms;
-      audioRef.current.play().catch(() => {});
-    }
-  }, [micStream]);
-
-  // Screen Share
-  useEffect(() => {
-    console.log("🖥 Screen share changed for", participantId, screenShareStream);
-
-    if (screenShareStream && screenRef.current) {
-      const ms = new MediaStream();
-      ms.addTrack(screenShareStream.track);
-      screenRef.current.srcObject = ms;
-      screenRef.current.play().catch(() => {});
-    }
-  }, [screenShareStream]);
-
-  const isActive = activeSpeakerId === participantId;
-
-  return (
-    <div className="bg-black p-2 rounded-md relative border border-gray-700">
-      {screenShareStream ? (
-        <video ref={screenRef} autoPlay playsInline className="w-full h-48" />
-      ) : webcamOn ? (
-        <video ref={videoRef} autoPlay playsInline muted={isLocal} className="w-full h-48" />
-      ) : (
-        <div className="h-48 flex justify-center items-center text-white text-3xl">
-          {displayName?.charAt(0)}
-        </div>
-      )}
-
-      <audio ref={audioRef} autoPlay playsInline />
-
-      <div className="absolute bottom-2 left-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
-        {displayName} {isLocal ? "(You)" : ""}
-      </div>
-
-      {isActive && (
-        <div className="absolute top-2 left-2 bg-yellow-400 text-black px-2 py-1 rounded text-xs">
-          Speaking
-        </div>
-      )}
-    </div>
-  );
+function useLocalStorage(key, initial) {
+    const [state, setState] = useState(() => {
+        try {
+            const raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : initial;
+        } catch (e) {
+            return initial;
+        }
+    });
+    useEffect(() => {
+        try {
+            localStorage.setItem(key, JSON.stringify(state));
+        } catch (e) {}
+    }, [key, state]);
+    return [state, setState];
 }
 
-export default function MeetingUI({ meetingId, token }) {
-  console.log("📌 MeetingUI Props:", { meetingId, token });
-
-  const meeting = useMeeting({
-    onMeetingJoined: () => console.log("✅ Meeting joined"),
-    onMeetingLeft: () => console.log("❌ Meeting left"),
-    onParticipantJoined: (p) => console.log("🟢 Participant joined", p),
-    onParticipantLeft: (p) => console.log("🔴 Participant left", p),
-    onSpeakerChanged: (activeSpeakerId) =>
-      console.log("🔊 Active speaker changed:", activeSpeakerId),
-    onMessageReceived: (msg) => console.log("💬 Message received:", msg)
-  });
-
-  const [joined, setJoined] = useState(false);
-  const [layout, setLayout] = useState("grid");
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [raiseHandSet, setRaiseHandSet] = useState(new Set());
-
-  // Sync SDK messages → UI
-  useEffect(() => {
-    console.log("📨 Messages updated:", meeting?.messages);
-    setMessages([...(meeting?.messages || [])]);
-  }, [meeting?.messages]);
-
-  const participants = [...(meeting?.participants?.keys() || [])];
-  const activeSpeakerId = meeting?.activeSpeakerId;
-
-  // JOIN
-  const joinMeeting = async () => {
-    console.log("🔵 Joining meeting...");
-    await meeting.join();
-    setJoined(true);
-  };
-
-  // LEAVE
-  const leaveMeeting = async () => {
-    console.log("🔴 Leaving meeting...");
-    await meeting.leave();
-    setJoined(false);
-  };
-
-  // Mic
-  const toggleMic = () => {
-    console.log("🎤 Toggling mic");
-    meeting.toggleMic();
-  };
-
-  // Cam
-  const toggleWebcam = () => {
-    console.log("🎥 Toggling webcam");
-    meeting.toggleWebcam();
-  };
-
-  // Screen Share
-  const toggleScreenShare = () => {
-    console.log("🖥 Toggling screen share");
-    meeting.toggleScreenShare();
-  };
-
-  // Chat
-  const sendMessage = async () => {
-    if (!message.trim()) return;
-
-    console.log("💬 Sending message:", message);
-
-    await meeting.send({
-      type: "chat",
-      text: message
+export default function MeetingUI({ meetingId, token, isAdmin = false }) {
+    
+    // UI state
+    const [joined, setJoined] = useState(false);
+    const [showNameModal, setShowNameModal] = useState(false);
+    const [name, setName] = useState(() => {
+        return localStorage.getItem("meeting_username") || "";
     });
+    
+    const [focusedParticipantId, setFocusedParticipantId] = useState(null);
 
-    setMessage("");
-  };
+    const [captions, setCaptions] = useLocalStorage("meeting_captions", []);
+    const [captionsOn, setCaptionsOn] = useState(false);
+    const recognitionRef = useRef(null);
+    
+    const [targetLanguage, setTargetLanguage] = useState(
+        localStorage.getItem("meeting_target_lang") || 'en'
+    );
 
-  // Raise Hand
-  const toggleRaiseHand = () => {
-    const id = meeting.localParticipant.id;
-    console.log("✋ Raise hand clicked by", id);
+    // visual states
+    const [micOn, setMicOn] = useState(false);
+    const [camOn, setCamOn] = useState(false);
+    
+    // RECORDING STATES
+    const [isCloudRecording, setIsCloudRecording] = useState(false); 
+    const [isLocalRecording, setIsLocalRecording] = useState(false); 
+    const recorderRef = useRef(null);
+    const chunksRef = useRef([]);
 
-    const newSet = new Set(raiseHandSet);
+    // NEW STATE: Combined AI Magic Status (Controls Local Recording + Captions)
+    const [isMagicOn, setIsMagicOn] = useState(false); 
 
-    if (newSet.has(id)) {
-      newSet.delete(id);
-      meeting.send({ type: "raise-hand", action: "lower", from: id });
-    } else {
-      newSet.add(id);
-      meeting.send({ type: "raise-hand", action: "raise", from: id });
+    // raise-hand set
+    const [raiseHandSet] = useState(new Set());
+
+
+    // =====================================================================
+    // STEP 1: DEFINE THE MEETING OBJECT FIRST
+    // =====================================================================
+    const meeting = useMeeting({
+        onMeetingJoined: () => {
+            console.log("✅ Meeting joined");
+            setJoined(true);
+        },
+        onMeetingLeft: () => {
+            console.log("❌ Meeting left");
+            setJoined(false);
+            stopAIMagic(); // Ensure local recording/captions are stopped on leave
+        },
+        onRecordingStarted: () => {
+            console.log("🔴 Cloud Recording started");
+            setIsCloudRecording(true);
+        },
+        onRecordingStopped: () => {
+            console.log("🟢 Cloud Recording stopped. Video will be available shortly.");
+            setIsCloudRecording(false);
+            alert("Cloud Recording stopped. File will be processed by Videosdk shortly.");
+        },
+        onParticipantJoined: (p) => console.log("🟢 Participant joined", p),
+        onParticipantLeft: (p) => console.log("🔴 Participant left", p),
+        onSpeakerChanged: (id) => console.log("🔊 Active speaker:", id),
+        onMessageReceived: (msg) => handleIncomingMessage(msg)
+    });
+    
+    // =====================================================================
+    // STEP 2: DEFINE CALL-BACK FUNCTIONS 
+    // =====================================================================
+
+    // --- LOCAL SCREEN RECORDING LOGIC (Helper Functions) ---
+    const stopLocalRecording = useCallback(() => {
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+            const tracks = recorderRef.current.stream.getTracks();
+            tracks.forEach(track => track.stop()); // Stop stream tracks too
+            recorderRef.current.stop();
+        }
+    }, []);
+
+    const startLocalRecording = useCallback(async () => {
+        try {
+            // 1. Get Screen Stream (User must grant permission)
+            const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                video: true,
+                audio: true, // Capture system audio/mic if possible
+            });
+            
+            // 2. Start Local Recording using MediaRecorder API
+            recorderRef.current = new MediaRecorder(screenStream);
+            chunksRef.current = [];
+            
+            recorderRef.current.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    chunksRef.current.push(event.data);
+                }
+            };
+
+            recorderRef.current.onstop = () => {
+                console.log("Local Recording stopped. Preparing download...");
+                
+                if (chunksRef.current.length > 0) {
+                    const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = `meeting_recording_${new Date().toISOString()}.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                     console.warn("No data recorded to download.");
+                }
+                
+                setIsLocalRecording(false);
+            };
+
+            recorderRef.current.start();
+            setIsLocalRecording(true);
+            
+            screenStream.getVideoTracks()[0].onended = () => {
+                console.log("Browser sharing ended, stopping local recorder.");
+                stopLocalRecording();
+            };
+
+            return true; 
+        } catch (screenError) {
+            console.warn("Screen share/Local Recording failed (permission denied or error)", screenError);
+            setIsLocalRecording(false);
+            alert("Could not start screen download. Check if you granted screen sharing permission and HTTPS is used.");
+            return false; 
+        }
+    }, [stopLocalRecording]);
+    // --- END LOCAL SCREEN RECORDING LOGIC ---
+
+
+    // --- CAPTIONS LOGIC (Helper Functions) ---
+    const restartRecognition = useCallback(() => {
+        if (!captionsOn || !recognitionRef.current) return;
+        
+        try {
+            recognitionRef.current.stop();
+        } catch (e) {}
+
+        setTimeout(() => {
+            if (captionsOn && recognitionRef.current) {
+                 try {
+                    recognitionRef.current.start();
+                    console.log("SR stopped and successfully restarted.");
+                } catch(e) {
+                    console.warn("Failed to restart SR after stop:", e);
+                }
+            }
+        }, 100); 
+
+    }, [captionsOn]);
+    
+    async function startCaptions() {
+        if (captionsOn) return true;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+            console.error("SpeechRecognition not supported. Use Chrome/Edge.");
+            alert("SpeechRecognition not supported. Use Chrome/Edge.");
+            return false;
+        }
+
+        const rec = new SR();
+        rec.continuous = true;
+        rec.interimResults = false;
+        rec.lang = "auto";
+
+        rec.onresult = async (ev) => {
+            const last = ev.results[ev.results.length - 1];
+            const text = last[0].transcript.trim();
+            
+            // CONSOLE LOG 1: Transcript received
+            if (text) {
+                console.log("💬 Transcript Received:", text);
+            } else {
+                return;
+            }
+            
+            const translated = await translateToTargetLanguage(text, targetLanguage);
+            
+            // CONSOLE LOG 2: Translation result
+            console.log(`🌍 Translation (to ${targetLanguage}):`, translated);
+
+            const payload = {
+                type: "subtitle",
+                senderId: meeting?.localParticipant?.id,
+                senderName: meeting?.localParticipant?.displayName || name || "You",
+                original: text,
+                text: translated,
+                ts: new Date().toISOString()
+            };
+
+            // Local push so you see your own words immediately
+            setCaptions((prev) => [...prev, {
+                senderName: payload.senderName, text: payload.text, original: payload.original, ts: payload.ts
+            }]);
+
+            await sendPayload(payload);
+            
+            // CONSOLE LOG 3: Payload sent
+            console.log("🚀 Subtitle Payload Sent:", payload);
+        };
+
+        rec.onerror = (e) => {
+            console.warn("SR error", e);
+            if (e.error === 'network' || e.error === 'service-not-allowed') {
+                console.log("Error detected, attempting restart...");
+                restartRecognition();
+            } else if (e.error === 'not-allowed') {
+                 // The main reason why captions fail: Mic access denied
+                 console.error("🎤 Microphone Access Denied for Speech Recognition. The user must grant permission.");
+                 alert("Microphone access needed for Captions. Please check your browser settings.");
+                 stopCaptions(); // Stop immediately if access is denied
+                 return;
+            }
+        };
+        
+        rec.onend = () => {
+            console.log("SR ended, checking for auto-restart.");
+            restartRecognition();
+        };
+
+        try {
+            rec.start();
+            recognitionRef.current = rec;
+            setCaptionsOn(true);
+            console.log("✅ Speech Recognition started successfully.");
+            return true;
+        } catch (e) {
+            console.warn("start SR failed", e);
+            return false;
+        }
     }
 
-    setRaiseHandSet(newSet);
-  };
+    function stopCaptions() {
+        setCaptionsOn(false);
+        if (recognitionRef.current) {
+            try { recognitionRef.current.stop(); } catch (e) {}
+            recognitionRef.current = null;
+            console.log("🛑 Speech Recognition stopped.");
+        }
+    }
+    // --- END CAPTIONS LOGIC ---
 
-  return (
-  <div className="flex flex-col lg:flex-row h-screen">
-    {/* LEFT */}
-    <div className="flex-1 p-4 overflow-auto">
+    // --- MAIN AI MAGIC FUNCTION ---
+    async function toggleAIMagic() {
+        if (isCloudRecording) return alert("Please stop cloud recording before starting AI Magic.");
 
-      <h2 className="text-xl font-semibold">
-        Meeting: <span className="text-blue-600">{meetingId}</span>
-      </h2>
+        if (!isMagicOn) {
+            // Start Logic
+            
+            // Mic Check
+            if (!meeting?.localParticipant?.micOn) {
+                alert("Please turn on your Microphone first to enable Live Captions/Speech Recognition.");
+                try { 
+                    await meeting.toggleMic(); 
+                    setMicOn(true); 
+                } catch(e) { 
+                    console.warn("Auto-toggle mic failed:", e);
+                }
+                // Check again if mic is successfully on (browser might have asked for permission)
+                if (!meeting?.localParticipant?.micOn) return false; 
+            }
+            
+            const captionsStarted = await startCaptions(); // Tries to get mic permission for SR
+            const recordingStarted = await startLocalRecording(); // Tries to get screen share permission
 
-      <div className="flex flex-wrap gap-2 mb-3">
-        {!joined ? (
-          <button onClick={joinMeeting} className="px-3 py-2 bg-green-600 text-white rounded">
-            Join
-          </button>
+            if (captionsStarted && recordingStarted) {
+                setIsMagicOn(true);
+                console.log("✨ AI Magic successfully started (Captions + Recording).");
+            } else {
+                // Stop anything that might have partially started
+                if (captionsStarted) stopCaptions();
+                if (recordingStarted) stopLocalRecording();
+                setIsMagicOn(false);
+                alert("Failed to start AI Magic. Check if you granted both Microphone and Screen Sharing permissions.");
+            }
+
+        } else {
+            // Stop Logic
+            stopCaptions();
+            stopLocalRecording(); // This will trigger the download
+            setIsMagicOn(false);
+            console.log("🛑 AI Magic stopped.");
+            alert("AI Magic stopped. Recording download should start automatically shortly.");
+        }
+    }
+
+    // Combined cleanup function
+    const stopAIMagic = useCallback(() => {
+        if (isMagicOn) { // Only run if it's currently on
+            stopCaptions();
+            stopLocalRecording();
+            setIsMagicOn(false);
+        }
+    }, [isMagicOn, stopLocalRecording]);
+
+
+    // Rest of the logic and handlers (unchanged)
+    const participants = [...(meeting?.participants?.values?.() || [])];
+
+    function toggleFocus(participantId) {
+        setFocusedParticipantId(prev => (prev === participantId ? null : participantId));
+    }
+    
+    useEffect(() => {
+        localStorage.setItem("meeting_target_lang", targetLanguage);
+    }, [targetLanguage]);
+
+    async function translateToTargetLanguage(text, targetLang) {
+        if (targetLang === 'auto') return text;
+        try {
+            const q = encodeURIComponent(text);
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            return data?.[0]?.[0]?.[0] || text;
+        } catch (e) {
+            console.warn("translate error", e);
+            return text;
+        }
+    }
+
+    async function sendPayload(obj) {
+        try {
+            const s = JSON.stringify(obj);
+            await meeting.send(s);
+        } catch (e) {
+            console.warn("meeting.send failed", e);
+        }
+    }
+
+    function handleIncomingMessage(msg) {
+         try {
+            let parsed = null;
+            if (typeof msg === "string") parsed = JSON.parse(msg);
+            else if (msg && typeof msg === "object") {
+                if (msg.payload && typeof msg.payload === "string") parsed = JSON.parse(msg.payload);
+                else parsed = msg;
+            }
+            if (!parsed) return;
+
+            if (parsed.type === "subtitle") {
+                setCaptions((prev) => [...prev, {
+                    senderName: parsed.senderName || parsed.senderId || "Unknown",
+                    text: parsed.text || parsed.original || "",
+                    original: parsed.original || "",
+                    ts: parsed.ts || new Date().toISOString()
+                }]);
+            } else if (parsed.type === "raise-hand") {
+                setRaiseHandSet((prev) => {
+                    const next = new Set(prev);
+                    if (parsed.action === "raise") next.add(parsed.from);
+                    else next.delete(parsed.from);
+                    return next;
+                });
+            } else if (parsed.type === "end-meeting") {
+                alert("Meeting ended by host");
+                try { meeting.leave(); } catch (e) {}
+            }
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    async function handleJoinClick() {
+        if (!name || !name.trim()) {
+            setShowNameModal(true);
+            return;
+        }
+        localStorage.setItem("meeting_username", name);
+        try {
+            await meeting.join({ name }); 
+            setMicOn(Boolean(meeting?.localParticipant?.micOn));
+            setCamOn(Boolean(meeting?.localParticipant?.webcamOn));
+        } catch (e) {
+            console.warn("join failed", e);
+        }
+    }
+
+    function handleLeave() {
+        if (isCloudRecording) {
+            alert("Cloud Recording is active. Please stop it manually before leaving.");
+            return;
+        }
+        
+        // --- Stop AI Magic and trigger download on leave ---
+        if (isMagicOn) {
+            stopAIMagic();
+            // We wait a moment for the 'onstop' event to fire and trigger download
+            setTimeout(() => {
+                try { meeting.leave(); setJoined(false); setFocusedParticipantId(null); } catch (e) { console.warn(e); }
+            }, 1000);
+        } else {
+            try { meeting.leave(); setJoined(false); setFocusedParticipantId(null); } catch (e) { console.warn(e); }
+        }
+    }
+
+    async function handleEnd() {
+        if (!isAdmin) return alert("Only host can end the meeting");
+        if (isCloudRecording) {
+             alert("Stopping cloud recording before ending the meeting...");
+             await meeting.stopRecording();
+        }
+        stopAIMagic(); // Stop and trigger download
+        await sendPayload({ type: "end-meeting", senderName: meeting?.localParticipant?.displayName || name, ts: new Date().toISOString() });
+        try { if (typeof meeting.end === 'function') await meeting.end(); else meeting.leave(); } catch (e) { console.warn(e); }
+    }
+
+    // Removed toggleCloudRecording as per user request to hide button
+    // async function toggleCloudRecording() { ... }
+
+
+    async function toggleMic() {
+        try {
+            await meeting.toggleMic();
+            setMicOn((s) => !s);
+        } catch (e) { console.warn(e); }
+    }
+    async function toggleCam() {
+        try {
+            await meeting.toggleWebcam();
+            setCamOn((s) => !s);
+        } catch (e) { console.warn(e); }
+    }
+
+    async function toggleRaiseHand() {
+        const id = meeting?.localParticipant?.id || "local";
+        const has = raiseHandSet.has(id);
+        const payload = { type: "raise-hand", action: has ? "lower" : "raise", from: id, senderName: meeting?.localParticipant?.displayName || name, ts: new Date().toISOString() };
+        await sendPayload(payload);
+        setRaiseHandSet((prev) => {
+            const next = new Set(prev);
+            if (has) next.delete(id); else next.add(id);
+            return next;
+        });
+    }
+
+    useEffect(() => {
+        return () => {
+            stopAIMagic(); // Cleanup on component unmount
+        };
+    }, [stopAIMagic]); 
+
+    return (
+        <div className="min-h-screen bg-gray-900 text-white">
+            {/* TOP FIXED OP BAR */}
+            <div className="fixed top-0 left-0 right-0 z-50 bg-gray-800/95 backdrop-blur-sm border-b border-gray-700 p-2">
+                <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+                
+                <div className="flex items-center gap-4">
+                    <div className="font-bold">Meeting:</div>
+                    <div className="text-sm text-gray-300">{meetingId}</div>
+                    <div className="text-sm font-medium hidden sm:block">
+                      {isCloudRecording ? <span className="text-red-500">🔴 CLOUD RECORDING</span> 
+                      : isMagicOn ? <span className="text-pink-400">✨ AI MAGIC ACTIVE (Downloading)</span>
+                      : <span className="text-green-400">{joined ? `Joined as: ${name || 'You'}` : 'Not Joined'}</span>}
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    
+                    {!joined ? (
+                    <button onClick={handleJoinClick} className="px-3 py-2 rounded bg-green-600 flex items-center gap-2 font-medium">Join Meeting</button>
+                    ) : (
+                    <>
+                        {/* --- AI Magic Button (Available to ALL) --- */}
+                        <button 
+                            onClick={toggleAIMagic} 
+                            disabled={isCloudRecording}
+                            className={`px-3 py-2 rounded font-medium flex items-center gap-2 ${isMagicOn ? 'bg-pink-600' : 'bg-gray-700 hover:bg-pink-500'}`} 
+                            title={isMagicOn ? "Stop AI Magic (Download Recording)" : "Start AI Magic (Captions + Local Screen Recording)"}
+                        >
+                            {isMagicOn ? <FaRegStopCircle /> : <FaMagic />} <span className="hidden sm:inline">{isMagicOn ? 'Stop AI Magic' : 'Start AI Magic'}</span>
+                        </button>
+                        
+
+                        {/* Cloud Recording Button is REMOVED */}
+
+                        <button onClick={toggleMic} aria-pressed={micOn} className={`px-3 py-2 rounded ${micOn ? 'bg-green-500 text-black' : 'bg-gray-700'}`} title="Toggle Mic">
+                        <FiMic />
+                        </button>
+
+                        <button onClick={toggleCam} aria-pressed={camOn} className={`px-3 py-2 rounded ${camOn ? 'bg-green-500 text-black' : 'bg-gray-700'}`} title="Toggle Camera">
+                        <FiVideo />
+                        </button>
+
+                        <button onClick={() => meeting.toggleScreenShare?.()} className="px-3 py-2 rounded bg-gray-700" title="Toggle Screen Share">
+                        <FiMonitor />
+                        </button>
+
+                        <button onClick={toggleRaiseHand} className="px-3 py-2 rounded bg-yellow-400 text-black" title="Raise Hand">
+                        <FaHandPaper />
+                        </button>
+
+                        <button onClick={handleLeave} className="px-3 py-2 rounded bg-red-600 flex items-center gap-2" title="Leave">
+                        <FaSignOutAlt /> <span className="hidden sm:inline">Leave</span>
+                        </button>
+
+                        {isAdmin && (
+                          <button onClick={handleEnd} className="px-3 py-2 rounded bg-red-800 flex items-center gap-2" title="End Meeting for all">
+                            <FaStopCircle /> <span className="hidden sm:inline">End All</span>
+                          </button>
+                        )}
+                    </>
+                    )}
+                </div>
+                </div>
+            </div>
+
+            <div className="pt-16"></div>
+
+            {/* MAIN CONTENT: Video Grid and Subtitle Panel */}
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-4 p-4">
+                
+                {/* LEFT (Video Grid/Focus View) */}
+                <main className="bg-transparent p-1">
+                <div className="grid gap-4 h-[85vh]">
+                    
+                    {focusedParticipantId ? (
+                    <div className="w-full h-full">
+                        <ParticipantTile
+                        key={focusedParticipantId}
+                        participantId={focusedParticipantId}
+                        activeSpeakerId={meeting?.activeSpeakerId}
+                        toggleFocus={toggleFocus}
+                        isFocused={true}
+                        />
+                    </div>
+                    ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                        {participants.map((p) => (
+                        <ParticipantTile 
+                            key={p.id} 
+                            participantId={p.id} 
+                            activeSpeakerId={meeting?.activeSpeakerId} 
+                            toggleFocus={toggleFocus} 
+                            isFocused={false} 
+                        />
+                        ))}
+                    </div>
+                    )}
+                </div>
+
+                </main>
+
+                {/* RIGHT: subtitles panel (20rem wide on large screens) */}
+                <aside className="bg-white text-black p-4 rounded border border-gray-300 h-[85vh] overflow-auto">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-semibold">Live Subtitles</h3>
+                    
+                    <select
+                    value={targetLanguage}
+                    onChange={(e) => setTargetLanguage(e.target.value)}
+                    className="p-1 border rounded text-sm bg-gray-100 text-black"
+                    >
+                    {LANGUAGE_OPTIONS.map(opt => (
+                        <option key={opt.code} value={opt.code}>
+                        Translate to {opt.name}
+                        </option>
+                    ))}
+                    </select>
+                </div>
+
+                <div className="space-y-3">
+                    {captions.length === 0 ? (
+                    <div className="text-gray-500">No subtitles yet — start AI Magic or wait for others.</div>
+                    ) : (
+                    captions.map((c, idx) => (
+                        <div key={idx} className="p-3 bg-gray-100 rounded border">
+                        <div className="text-xs text-gray-500">{new Date(c.ts).toLocaleTimeString()}</div>
+                        <div className="font-medium">{c.senderName}</div>
+                        <div className="mt-1 text-gray-800">{c.text}</div>
+                        {c.original && <div className="mt-1 text-xs text-gray-500">({c.original})</div>}
+                        </div>
+                    ))
+                    )}
+                </div>
+
+                <div className="mt-4">
+                    <button onClick={() => { setCaptions([]); localStorage.removeItem('meeting_captions'); }} className="text-xs text-red-600">Clear saved subtitles</button>
+                </div>
+                </aside>
+            </div>
+
+            {/* Name modal (remains the same) */}
+            {showNameModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="bg-white rounded p-5 w-11/12 max-w-md">
+                    <h3 className="font-semibold mb-2 text-black">Enter your display name</h3>
+                    <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border p-2 rounded mb-3 text-black" placeholder="Your name" />
+                    <div className="flex gap-2">
+                    <button onClick={() => { if(!name.trim()){ alert('Please enter name'); return;} setShowNameModal(false); localStorage.setItem('meeting_username', name); handleJoinClick(); }} className="flex-1 bg-blue-600 text-white py-2 rounded">Join</button>
+                    <button onClick={() => setShowNameModal(false)} className="flex-1 bg-gray-300 text-black py-2 rounded">Cancel</button>
+                    </div>
+                </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ParticipantTile (unchanged)
+function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocused }) {
+    const { webcamStream, micStream, webcamOn, micOn, isLocal, displayName, screenShareStream } = useParticipant(participantId);
+    const videoRef = useRef(null);
+    const audioRef = useRef(null);
+    const screenRef = useRef(null);
+
+    useEffect(() => {
+        if (webcamStream && videoRef.current) {
+            const ms = new MediaStream();
+            ms.addTrack(webcamStream.track);
+            videoRef.current.srcObject = ms;
+            videoRef.current.play().catch(() => {});
+        }
+    }, [webcamStream]);
+
+    useEffect(() => {
+        if (micStream && audioRef.current) {
+            const ms = new MediaStream();
+            ms.addTrack(micStream.track);
+            audioRef.current.srcObject = ms;
+            audioRef.current.play().catch(() => {});
+        }
+    }, [micStream]);
+
+    useEffect(() => {
+        if (screenShareStream && screenRef.current) {
+            const ms = new MediaStream();
+            ms.addTrack(screenShareStream.track);
+            screenRef.current.srcObject = ms;
+            screenRef.current.play().catch(() => {});
+        }
+    }, [screenShareStream]);
+
+    const isActive = activeSpeakerId === participantId;
+    
+    const tileHeight = isFocused ? 'h-full' : 'h-48';
+    const objectFit = isFocused ? 'object-contain' : 'object-cover';
+    const focusIcon = isFocused ? <FaCompressAlt /> : <FaExpandAlt />;
+
+
+    return (
+        <div 
+            onClick={() => toggleFocus(participantId)}
+            className={`bg-black p-2 rounded-md relative border cursor-pointer transition-all duration-300 ${tileHeight} ${isActive ? 'border-yellow-400' : 'border-gray-700'}`}
+        >
+        
+        {screenShareStream ? (
+            <video ref={screenRef} autoPlay playsInline className={`w-full ${tileHeight} ${objectFit} rounded`} />
+        ) : webcamOn ? (
+            <video ref={videoRef} autoPlay playsInline muted={isLocal} className={`w-full ${tileHeight} ${objectFit} rounded`} />
         ) : (
-          <button onClick={leaveMeeting} className="px-3 py-2 bg-red-600 text-white rounded">
-            Leave
-          </button>
+            <div className={`${tileHeight} flex justify-center items-center text-white text-3xl bg-gray-800 rounded`}>{displayName?.charAt(0) || 'U'}</div>
         )}
 
-        <button onClick={toggleMic} className="p-2 bg-gray-200 rounded">
-          <FiMic />
-        </button>
+        <audio ref={audioRef} autoPlay playsInline muted={isLocal} />
 
-        <button onClick={toggleWebcam} className="p-2 bg-gray-200 rounded">
-          <FiVideo />
-        </button>
+        <div className="absolute bottom-2 left-2 bg-black/60 text-white px-2 py-1 rounded text-xs">{displayName} {isLocal ? '(You)' : ''}</div>
+        
+        <div className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full text-xs" title={isFocused ? "Click to minimize" : "Click to maximize"}>
+            {focusIcon}
+        </div>
 
-        <button onClick={toggleScreenShare} className="p-2 bg-gray-200 rounded">
-          <FiMonitor />
-        </button>
-
-        <select
-          value={layout}
-          onChange={(e) => setLayout(e.target.value)}
-          className="p-2 border rounded"
-        >
-          <option value="grid">Grid</option>
-          <option value="spotlight">Spotlight</option>
-        </select>
-      </div>
-
-      {/* VIDEO GRID */}
-      <div
-        className="
-          grid 
-          grid-cols-1 
-          sm:grid-cols-2 
-          md:grid-cols-3 
-          xl:grid-cols-4
-          gap-4
-        "
-      >
-        {participants.map((pId) => (
-          <ParticipantTile
-            key={pId}
-            participantId={pId}
-            spotlightMode={layout === "spotlight"}
-            activeSpeakerId={activeSpeakerId}
-          />
-        ))}
-      </div>
-    </div>
-
-    {/* RIGHT (CHAT) */}
-    <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l p-4 h-56">
-      <h3 className="font-semibold">Chat</h3>
-
-      <button
-        onClick={toggleRaiseHand}
-        className="px-3 py-1 bg-yellow-300 rounded mt-2"
-      >
-        Raise Hand ✋
-      </button>
-
-      <div className="h-80 overflow-auto bg-gray-50 p-2 mt-4 rounded">
-        {messages.map((m, idx) => (
-          <div key={idx} className="p-2 bg-white mb-2 rounded shadow-sm">
-            <b>{m.senderId || m.from}</b>: {m.text}
-          </div>
-        ))}
-      </div>
-
-      <input
-        className="border p-2 rounded w-full mt-2"
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-        placeholder="Write a message..."
-      />
-
-      <button
-        onClick={sendMessage}
-        className="mt-2 w-full bg-blue-600 text-white p-2 rounded"
-      >
-        <FiSend />
-      </button>
-    </div>
-  </div>
-);
-
+        {isActive && <div className="absolute top-2 left-2 bg-yellow-400 text-black px-2 py-1 rounded text-xs">Speaking</div>}
+        </div>
+    );
 }
