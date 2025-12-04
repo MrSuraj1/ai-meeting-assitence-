@@ -1,10 +1,11 @@
 // src/component/MeetingUI.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
-import { FiMic, FiVideo, FiMonitor } from "react-icons/fi";
-import { FaHandPaper, FaSignOutAlt, FaStopCircle, FaExpandAlt, FaCompressAlt, FaVideo, FaRegStopCircle, FaMicrophoneAlt, FaMagic } from "react-icons/fa"; 
+import { FiMic, FiVideo, FiMonitor, FiVolume2, FiVolumeX } from "react-icons/fi"; // Added Volume icons
+import { FaHandPaper, FaSignOutAlt, FaStopCircle, FaExpandAlt, FaCompressAlt, FaRegStopCircle, FaMagic } from "react-icons/fa"; 
+import { IoIosMicOff } from "react-icons/io"; // Added Mic Off icon for clarity
 
-// Language Options for Subtitle Translation (No change)
+// --- Configuration ---
 const LANGUAGE_OPTIONS = [
     { code: 'en', name: 'English' },
     { code: 'hi', name: 'Hindi' },
@@ -13,6 +14,8 @@ const LANGUAGE_OPTIONS = [
     { code: 'de', name: 'German' },
     { code: 'auto', name: 'Original (No Translation)' },
 ];
+
+// --- Custom Hooks (No change) ---
 
 function useLocalStorage(key, initial) {
     const [state, setState] = useState(() => {
@@ -31,6 +34,8 @@ function useLocalStorage(key, initial) {
     return [state, setState];
 }
 
+// --- Main Component ---
+
 export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     
     // UI state
@@ -42,6 +47,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     
     const [focusedParticipantId, setFocusedParticipantId] = useState(null);
 
+    // Subtitle state
     const [captions, setCaptions] = useLocalStorage("meeting_captions", []);
     const [captionsOn, setCaptionsOn] = useState(false);
     const recognitionRef = useRef(null);
@@ -64,11 +70,11 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     const [isMagicOn, setIsMagicOn] = useState(false); 
 
     // raise-hand set
-    const [raiseHandSet] = useState(new Set());
+    const [raiseHandSet, setRaiseHandSet] = useState(new Set());
 
 
     // =====================================================================
-    // STEP 1: DEFINE THE MEETING OBJECT FIRST
+    // STEP 1: DEFINE THE MEETING OBJECT (VideoSDK)
     // =====================================================================
     const meeting = useMeeting({
         onMeetingJoined: () => {
@@ -98,6 +104,30 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     // =====================================================================
     // STEP 2: DEFINE CALL-BACK FUNCTIONS 
     // =====================================================================
+
+    // --- UTILITY FUNCTIONS ---
+    async function translateToTargetLanguage(text, targetLang) {
+        if (targetLang === 'auto') return text;
+        try {
+            const q = encodeURIComponent(text);
+            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            return data?.[0]?.[0]?.[0] || text;
+        } catch (e) {
+            console.warn("translate error", e);
+            return text;
+        }
+    }
+
+    async function sendPayload(obj) {
+        try {
+            const s = JSON.stringify(obj);
+            await meeting.send(s);
+        } catch (e) {
+            console.warn("meeting.send failed", e);
+        }
+    }
 
     // --- LOCAL SCREEN RECORDING LOGIC (Helper Functions) ---
     const stopLocalRecording = useCallback(() => {
@@ -177,11 +207,11 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         setTimeout(() => {
             if (captionsOn && recognitionRef.current) {
                  try {
-                    recognitionRef.current.start();
-                    console.log("SR stopped and successfully restarted.");
-                } catch(e) {
-                    console.warn("Failed to restart SR after stop:", e);
-                }
+                     recognitionRef.current.start();
+                     console.log("SR stopped and successfully restarted.");
+                 } catch(e) {
+                     console.warn("Failed to restart SR after stop:", e);
+                 }
             }
         }, 100); 
 
@@ -332,7 +362,10 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     }, [isMagicOn, stopLocalRecording]);
 
 
-    // Rest of the logic and handlers (unchanged)
+    // =====================================================================
+    // STEP 3: HANDLERS AND LIFECYCLE
+    // =====================================================================
+
     const participants = [...(meeting?.participants?.values?.() || [])];
 
     function toggleFocus(participantId) {
@@ -343,31 +376,12 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         localStorage.setItem("meeting_target_lang", targetLanguage);
     }, [targetLanguage]);
 
-    async function translateToTargetLanguage(text, targetLang) {
-        if (targetLang === 'auto') return text;
-        try {
-            const q = encodeURIComponent(text);
-            const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
-            const res = await fetch(url);
-            const data = await res.json();
-            return data?.[0]?.[0]?.[0] || text;
-        } catch (e) {
-            console.warn("translate error", e);
-            return text;
-        }
-    }
-
-    async function sendPayload(obj) {
-        try {
-            const s = JSON.stringify(obj);
-            await meeting.send(s);
-        } catch (e) {
-            console.warn("meeting.send failed", e);
-        }
-    }
-
+    /**
+     * @function handleIncomingMessage
+     * @description This is the CRITICAL function that ensures subtitles from OTHER participants are displayed.
+     */
     function handleIncomingMessage(msg) {
-         try {
+          try {
             let parsed = null;
             if (typeof msg === "string") parsed = JSON.parse(msg);
             else if (msg && typeof msg === "object") {
@@ -376,13 +390,21 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
             }
             if (!parsed) return;
 
+            // --- Subtitle Handling ---
             if (parsed.type === "subtitle") {
-                setCaptions((prev) => [...prev, {
-                    senderName: parsed.senderName || parsed.senderId || "Unknown",
-                    text: parsed.text || parsed.original || "",
-                    original: parsed.original || "",
-                    ts: parsed.ts || new Date().toISOString()
-                }]);
+                // IMPORTANT: We only add if the sender is NOT the local user, 
+                // because the local user already added their own subtitle in rec.onresult
+                if (parsed.senderId !== meeting?.localParticipant?.id) {
+                     setCaptions((prev) => [...prev, {
+                        senderName: parsed.senderName || parsed.senderId || "Unknown",
+                        text: parsed.text || parsed.original || "",
+                        original: parsed.original || "",
+                        ts: parsed.ts || new Date().toISOString()
+                    }]);
+                }
+                
+                // Ensure subtitles from OTHERS are ALWAYS shown, regardless of isMagicOn status.
+
             } else if (parsed.type === "raise-hand") {
                 setRaiseHandSet((prev) => {
                     const next = new Set(prev);
@@ -443,9 +465,6 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         try { if (typeof meeting.end === 'function') await meeting.end(); else meeting.leave(); } catch (e) { console.warn(e); }
     }
 
-    // Removed toggleCloudRecording as per user request to hide button
-    // async function toggleCloudRecording() { ... }
-
 
     async function toggleMic() {
         try {
@@ -478,6 +497,10 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         };
     }, [stopAIMagic]); 
 
+    // =====================================================================
+    // STEP 4: RENDER
+    // =====================================================================
+
     return (
         <div className="min-h-screen bg-gray-900 text-white">
             {/* TOP FIXED OP BAR */}
@@ -485,11 +508,11 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
                 
                 <div className="flex items-center gap-4">
-                    <div className="font-bold">Meeting:</div>
-                    <div className="text-sm text-gray-300">{meetingId}</div>
+                    <div className="font-bold text-lg text-indigo-400">VideoConf.AI</div>
+                    <div className="text-sm text-gray-300">ID: {meetingId}</div>
                     <div className="text-sm font-medium hidden sm:block">
-                      {isCloudRecording ? <span className="text-red-500">🔴 CLOUD RECORDING</span> 
-                      : isMagicOn ? <span className="text-pink-400">✨ AI MAGIC ACTIVE (Downloading)</span>
+                      {isCloudRecording ? <span className="text-red-500 font-bold">🔴 CLOUD RECORDING</span> 
+                      : isMagicOn ? <span className="text-pink-400 font-bold">✨ AI MAGIC ACTIVE (Captions/Rec)</span>
                       : <span className="text-green-400">{joined ? `Joined as: ${name || 'You'}` : 'Not Joined'}</span>}
                     </div>
                 </div>
@@ -497,44 +520,41 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 <div className="flex items-center gap-2">
                     
                     {!joined ? (
-                    <button onClick={handleJoinClick} className="px-3 py-2 rounded bg-green-600 flex items-center gap-2 font-medium">Join Meeting</button>
+                    <button onClick={handleJoinClick} className="px-4 py-2 rounded-full bg-green-600 hover:bg-green-700 flex items-center gap-2 font-medium transition duration-200">Join Meeting</button>
                     ) : (
                     <>
                         {/* --- AI Magic Button (Available to ALL) --- */}
                         <button 
                             onClick={toggleAIMagic} 
                             disabled={isCloudRecording}
-                            className={`px-3 py-2 rounded font-medium flex items-center gap-2 ${isMagicOn ? 'bg-pink-600' : 'bg-gray-700 hover:bg-pink-500'}`} 
-                            title={isMagicOn ? "Stop AI Magic (Download Recording)" : "Start AI Magic (Captions + Local Screen Recording)"}
+                            className={`px-3 py-2 rounded-full font-medium flex items-center gap-2 transition duration-200 ${isMagicOn ? 'bg-pink-600 hover:bg-pink-700' : 'bg-gray-700 hover:bg-pink-500'}`} 
+                            title={isMagicOn ? "Stop AI Magic (Download Recording & Captions)" : "Start AI Magic (Captions + Local Screen Recording)"}
                         >
-                            {isMagicOn ? <FaRegStopCircle /> : <FaMagic />} <span className="hidden sm:inline">{isMagicOn ? 'Stop AI Magic' : 'Start AI Magic'}</span>
+                            {isMagicOn ? <FaRegStopCircle /> : <FaMagic />} <span className="hidden sm:inline">{isMagicOn ? 'Stop' : 'AI Magic'}</span>
                         </button>
                         
-
-                        {/* Cloud Recording Button is REMOVED */}
-
-                        <button onClick={toggleMic} aria-pressed={micOn} className={`px-3 py-2 rounded ${micOn ? 'bg-green-500 text-black' : 'bg-gray-700'}`} title="Toggle Mic">
-                        <FiMic />
+                        <button onClick={toggleMic} aria-pressed={micOn} className={`px-3 py-2 rounded-full transition duration-200 ${micOn ? 'bg-green-500 text-black' : 'bg-red-500 text-white'}`} title="Toggle Mic">
+                        {micOn ? <FiMic /> : <IoIosMicOff />}
                         </button>
 
-                        <button onClick={toggleCam} aria-pressed={camOn} className={`px-3 py-2 rounded ${camOn ? 'bg-green-500 text-black' : 'bg-gray-700'}`} title="Toggle Camera">
+                        <button onClick={toggleCam} aria-pressed={camOn} className={`px-3 py-2 rounded-full transition duration-200 ${camOn ? 'bg-green-500 text-black' : 'bg-gray-700'}`} title="Toggle Camera">
                         <FiVideo />
                         </button>
 
-                        <button onClick={() => meeting.toggleScreenShare?.()} className="px-3 py-2 rounded bg-gray-700" title="Toggle Screen Share">
+                        <button onClick={() => meeting.toggleScreenShare?.()} className="px-3 py-2 rounded-full bg-gray-700 hover:bg-gray-600 transition duration-200" title="Toggle Screen Share">
                         <FiMonitor />
                         </button>
 
-                        <button onClick={toggleRaiseHand} className="px-3 py-2 rounded bg-yellow-400 text-black" title="Raise Hand">
+                        <button onClick={toggleRaiseHand} className={`px-3 py-2 rounded-full transition duration-200 ${raiseHandSet.has(meeting?.localParticipant?.id) ? 'bg-yellow-400 text-black animate-pulse' : 'bg-gray-700 hover:bg-yellow-500'}`} title="Raise Hand">
                         <FaHandPaper />
                         </button>
 
-                        <button onClick={handleLeave} className="px-3 py-2 rounded bg-red-600 flex items-center gap-2" title="Leave">
+                        <button onClick={handleLeave} className="px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 flex items-center gap-2 transition duration-200" title="Leave">
                         <FaSignOutAlt /> <span className="hidden sm:inline">Leave</span>
                         </button>
 
                         {isAdmin && (
-                          <button onClick={handleEnd} className="px-3 py-2 rounded bg-red-800 flex items-center gap-2" title="End Meeting for all">
+                          <button onClick={handleEnd} className="px-4 py-2 rounded-full bg-red-800 hover:bg-red-900 flex items-center gap-2 transition duration-200" title="End Meeting for all">
                             <FaStopCircle /> <span className="hidden sm:inline">End All</span>
                           </button>
                         )}
@@ -544,14 +564,14 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 </div>
             </div>
 
-            <div className="pt-16"></div>
+            <div className="pt-20"></div>
 
             {/* MAIN CONTENT: Video Grid and Subtitle Panel */}
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_20rem] gap-4 p-4">
                 
                 {/* LEFT (Video Grid/Focus View) */}
                 <main className="bg-transparent p-1">
-                <div className="grid gap-4 h-[85vh]">
+                <div className="grid gap-4 h-[80vh] overflow-y-auto">
                     
                     {focusedParticipantId ? (
                     <div className="w-full h-full">
@@ -561,10 +581,11 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                         activeSpeakerId={meeting?.activeSpeakerId}
                         toggleFocus={toggleFocus}
                         isFocused={true}
+                        raiseHandSet={raiseHandSet} // Passing raiseHandSet to the tile
                         />
                     </div>
                     ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+                    <div className={`grid gap-4 ${participants.length > 2 ? 'grid-cols-2 md:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-2'}`}>
                         {participants.map((p) => (
                         <ParticipantTile 
                             key={p.id} 
@@ -572,6 +593,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                             activeSpeakerId={meeting?.activeSpeakerId} 
                             toggleFocus={toggleFocus} 
                             isFocused={false} 
+                            raiseHandSet={raiseHandSet} // Passing raiseHandSet to the tile
                         />
                         ))}
                     </div>
@@ -581,14 +603,14 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 </main>
 
                 {/* RIGHT: subtitles panel (20rem wide on large screens) */}
-                <aside className="bg-white text-black p-4 rounded border border-gray-300 h-[85vh] overflow-auto">
-                <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-lg font-semibold">Live Subtitles</h3>
+                <aside className="bg-gray-800 text-white p-4 rounded-lg shadow-xl border border-gray-700 h-[80vh] flex flex-col">
+                <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                    <h3 className="text-xl font-bold text-pink-400">Live Captions {captionsOn && <span className="text-sm text-green-400">(Listening)</span>}</h3>
                     
                     <select
                     value={targetLanguage}
                     onChange={(e) => setTargetLanguage(e.target.value)}
-                    className="p-1 border rounded text-sm bg-gray-100 text-black"
+                    className="p-1 border rounded text-sm bg-gray-700 text-white focus:ring-pink-500 focus:border-pink-500"
                     >
                     {LANGUAGE_OPTIONS.map(opt => (
                         <option key={opt.code} value={opt.code}>
@@ -598,36 +620,44 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                     </select>
                 </div>
 
-                <div className="space-y-3">
+                {/* Captions Feed */}
+                <div className="space-y-3 flex-grow overflow-y-auto custom-scrollbar">
                     {captions.length === 0 ? (
-                    <div className="text-gray-500">No subtitles yet — start AI Magic or wait for others.</div>
+                    <div className="text-gray-500 p-4 text-center">Start AI Magic (Captions) to see live conversation.</div>
                     ) : (
-                    captions.map((c, idx) => (
-                        <div key={idx} className="p-3 bg-gray-100 rounded border">
-                        <div className="text-xs text-gray-500">{new Date(c.ts).toLocaleTimeString()}</div>
-                        <div className="font-medium">{c.senderName}</div>
-                        <div className="mt-1 text-gray-800">{c.text}</div>
-                        {c.original && <div className="mt-1 text-xs text-gray-500">({c.original})</div>}
+                    captions.slice(-20).map((c, idx) => ( // Show only last 20 messages for performance
+                        <div key={idx} className="p-3 bg-gray-700 rounded-lg border-l-4 border-pink-500 transition duration-300 hover:bg-gray-600">
+                        <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
+                            <span className="font-semibold text-white">{c.senderName}</span>
+                            <span>{new Date(c.ts).toLocaleTimeString()}</span>
+                        </div>
+                        <div className="text-sm font-light italic text-gray-300">{c.original}</div>
+                        <div className="mt-1 text-md font-medium text-white">{c.text}</div>
                         </div>
                     ))
                     )}
                 </div>
 
-                <div className="mt-4">
-                    <button onClick={() => { setCaptions([]); localStorage.removeItem('meeting_captions'); }} className="text-xs text-red-600">Clear saved subtitles</button>
+                <div className="mt-4 pt-2 border-t border-gray-700">
+                    <button onClick={() => { setCaptions([]); localStorage.removeItem('meeting_captions'); }} className="text-xs text-red-500 hover:text-red-400 transition duration-200">Clear saved subtitles</button>
                 </div>
                 </aside>
             </div>
 
-            {/* Name modal (remains the same) */}
+            {/* Name modal (No change) */}
             {showNameModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-                <div className="bg-white rounded p-5 w-11/12 max-w-md">
-                    <h3 className="font-semibold mb-2 text-black">Enter your display name</h3>
-                    <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border p-2 rounded mb-3 text-black" placeholder="Your name" />
-                    <div className="flex gap-2">
-                    <button onClick={() => { if(!name.trim()){ alert('Please enter name'); return;} setShowNameModal(false); localStorage.setItem('meeting_username', name); handleJoinClick(); }} className="flex-1 bg-blue-600 text-white py-2 rounded">Join</button>
-                    <button onClick={() => setShowNameModal(false)} className="flex-1 bg-gray-300 text-black py-2 rounded">Cancel</button>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+                <div className="bg-gray-900 rounded-lg p-6 w-11/12 max-w-md border border-indigo-500 shadow-2xl">
+                    <h3 className="font-semibold mb-4 text-white text-xl">Enter your display name</h3>
+                    <input 
+                        value={name} 
+                        onChange={(e) => setName(e.target.value)} 
+                        className="w-full border border-gray-600 p-3 rounded-lg mb-4 text-white bg-gray-700 placeholder-gray-400 focus:border-indigo-400 focus:ring-indigo-400" 
+                        placeholder="Your name" 
+                    />
+                    <div className="flex gap-3">
+                    <button onClick={() => { if(!name.trim()){ alert('Please enter name'); return;} setShowNameModal(false); localStorage.setItem('meeting_username', name); handleJoinClick(); }} className="flex-1 bg-indigo-600 text-white py-3 rounded-lg font-bold hover:bg-indigo-700 transition duration-200">Join Meeting</button>
+                    <button onClick={() => setShowNameModal(false)} className="flex-1 bg-gray-700 text-white py-3 rounded-lg hover:bg-gray-600 transition duration-200">Cancel</button>
                     </div>
                 </div>
                 </div>
@@ -636,13 +666,18 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     );
 }
 
-// ParticipantTile (unchanged)
-function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocused }) {
+// --- Participant Tile Component ---
+
+function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocused, raiseHandSet }) {
     const { webcamStream, micStream, webcamOn, micOn, isLocal, displayName, screenShareStream } = useParticipant(participantId);
     const videoRef = useRef(null);
     const audioRef = useRef(null);
     const screenRef = useRef(null);
 
+    // Check for raise hand status
+    const isHandRaised = raiseHandSet.has(participantId);
+
+    // Video Stream Effect
     useEffect(() => {
         if (webcamStream && videoRef.current) {
             const ms = new MediaStream();
@@ -652,15 +687,18 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
         }
     }, [webcamStream]);
 
+    // Audio Stream Effect
     useEffect(() => {
         if (micStream && audioRef.current) {
             const ms = new MediaStream();
             ms.addTrack(micStream.track);
             audioRef.current.srcObject = ms;
+            // Only play if participant is not local, and if it's not muted globally
             audioRef.current.play().catch(() => {});
         }
     }, [micStream]);
 
+    // Screen Share Stream Effect
     useEffect(() => {
         if (screenShareStream && screenRef.current) {
             const ms = new MediaStream();
@@ -672,34 +710,74 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
 
     const isActive = activeSpeakerId === participantId;
     
-    const tileHeight = isFocused ? 'h-full' : 'h-48';
+    // UI Enhancements for Focus Mode
+    const tileClasses = `
+        bg-black p-1 rounded-lg relative border cursor-pointer transition-all duration-300 shadow-lg
+        ${isFocused ? 'h-full w-full' : 'h-64'} 
+        ${isActive ? 'border-4 border-yellow-400 ring-4 ring-yellow-700' : 'border-gray-700 hover:border-indigo-500'}
+    `;
     const objectFit = isFocused ? 'object-contain' : 'object-cover';
-    const focusIcon = isFocused ? <FaCompressAlt /> : <FaExpandAlt />;
 
 
     return (
         <div 
             onClick={() => toggleFocus(participantId)}
-            className={`bg-black p-2 rounded-md relative border cursor-pointer transition-all duration-300 ${tileHeight} ${isActive ? 'border-yellow-400' : 'border-gray-700'}`}
+            className={tileClasses}
         >
         
+        {/* Main Media Display */}
         {screenShareStream ? (
-            <video ref={screenRef} autoPlay playsInline className={`w-full ${tileHeight} ${objectFit} rounded`} />
+            <video ref={screenRef} autoPlay playsInline className={`w-full h-full ${objectFit} rounded-md`} />
         ) : webcamOn ? (
-            <video ref={videoRef} autoPlay playsInline muted={isLocal} className={`w-full ${tileHeight} ${objectFit} rounded`} />
+            <video ref={videoRef} autoPlay playsInline muted={isLocal} className={`w-full h-full ${objectFit} rounded-md`} />
         ) : (
-            <div className={`${tileHeight} flex justify-center items-center text-white text-3xl bg-gray-800 rounded`}>{displayName?.charAt(0) || 'U'}</div>
+            <div className="h-full flex justify-center items-center text-white text-4xl font-bold bg-gray-800 rounded-md">
+                {displayName?.charAt(0) || 'U'}
+            </div>
         )}
 
+        {/* Audio Player (muted for local participant) */}
         <audio ref={audioRef} autoPlay playsInline muted={isLocal} />
 
-        <div className="absolute bottom-2 left-2 bg-black/60 text-white px-2 py-1 rounded text-xs">{displayName} {isLocal ? '(You)' : ''}</div>
-        
-        <div className="absolute top-2 right-2 bg-black/60 text-white p-2 rounded-full text-xs" title={isFocused ? "Click to minimize" : "Click to maximize"}>
-            {focusIcon}
-        </div>
+        {/* Participant Info/Overlay */}
+        <div className="absolute bottom-1 left-1 right-1 bg-black/70 backdrop-blur-sm text-white px-3 py-1 rounded-b-lg flex justify-between items-center text-sm">
+            
+            <span className="font-semibold truncate max-w-[70%]">
+                {displayName} {isLocal ? '(You)' : ''}
+            </span>
 
-        {isActive && <div className="absolute top-2 left-2 bg-yellow-400 text-black px-2 py-1 rounded text-xs">Speaking</div>}
+            {/* Status Icons */}
+            <div className="flex gap-2 items-center">
+                {/* Hand Raised Icon */}
+                {isHandRaised && (
+                    <FaHandPaper className="text-yellow-400 text-base animate-pulse" title="Hand Raised" />
+                )}
+
+                {/* Active Speaker Indicator */}
+                {isActive && (
+                    <FiVolume2 className="text-green-400 text-base" title="Active Speaker" />
+                )}
+
+                {/* Mic Status */}
+                {!micOn && (
+                    <IoIosMicOff className="text-red-500 text-base" title="Mic Off" />
+                )}
+
+                {/* Webcam Status (Optional: can add FiVideoOff icon here if webcamOn is false) */}
+                
+            </div>
+        </div>
+        
+        {/* Focus/Maximize Button */}
+        <div className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white p-2 rounded-full text-xs transition duration-200" title={isFocused ? "Click to minimize" : "Click to maximize"}>
+            {isFocused ? <FaCompressAlt /> : <FaExpandAlt />}
+        </div>
+        
+        {/* Large Speaking Indicator */}
+        {isActive && !isFocused && <div className="absolute top-0 left-0 right-0 bottom-0 flex justify-center items-center pointer-events-none">
+            <div className="bg-yellow-400 text-black px-4 py-2 rounded-full text-lg font-bold shadow-xl animate-pulse">SPEAKING</div>
+        </div>}
+
         </div>
     );
 }
