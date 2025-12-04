@@ -1,9 +1,9 @@
 // src/component/MeetingUI.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
-import { FiMic, FiVideo, FiMonitor, FiVolume2, FiVolumeX } from "react-icons/fi"; // Added Volume icons
+import { FiMic, FiVideo, FiMonitor, FiVolume2 } from "react-icons/fi"; 
 import { FaHandPaper, FaSignOutAlt, FaStopCircle, FaExpandAlt, FaCompressAlt, FaRegStopCircle, FaMagic } from "react-icons/fa"; 
-import { IoIosMicOff } from "react-icons/io"; // Added Mic Off icon for clarity
+import { IoIosMicOff } from "react-icons/io"; 
 
 // --- Configuration ---
 const LANGUAGE_OPTIONS = [
@@ -15,7 +15,7 @@ const LANGUAGE_OPTIONS = [
     { code: 'auto', name: 'Original (No Translation)' },
 ];
 
-// --- Custom Hooks (No change) ---
+// --- Custom Hooks ---
 
 function useLocalStorage(key, initial) {
     const [state, setState] = useState(() => {
@@ -110,12 +110,14 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         if (targetLang === 'auto') return text;
         try {
             const q = encodeURIComponent(text);
+            // This is the UN-OFFICIAL Google Translate API endpoint.
+            // It might fail or stop working without warning.
             const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
             const res = await fetch(url);
             const data = await res.json();
             return data?.[0]?.[0]?.[0] || text;
         } catch (e) {
-            console.warn("translate error", e);
+            console.warn("translate error (using unofficial API)", e);
             return text;
         }
     }
@@ -198,12 +200,14 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
     // --- CAPTIONS LOGIC (Helper Functions) ---
     const restartRecognition = useCallback(() => {
+        // If captions were turned off while an error occurred, don't restart
         if (!captionsOn || !recognitionRef.current) return;
         
         try {
             recognitionRef.current.stop();
         } catch (e) {}
 
+        // Small delay before restart to avoid race conditions
         setTimeout(() => {
             if (captionsOn && recognitionRef.current) {
                  try {
@@ -229,22 +233,22 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         const rec = new SR();
         rec.continuous = true;
         rec.interimResults = false;
-        rec.lang = "auto";
+        
+        // IMPORTANT: We use "auto" to detect language, but you can hardcode for Hindi/English 
+        // to test specific languages better, e.g., rec.lang = "hi-IN";
+        rec.lang = "auto"; 
 
         rec.onresult = async (ev) => {
             const last = ev.results[ev.results.length - 1];
             const text = last[0].transcript.trim();
             
-            // CONSOLE LOG 1: Transcript received
-            if (text) {
-                console.log("💬 Transcript Received:", text);
-            } else {
-                return;
-            }
+            if (!text) return;
             
+            console.log("💬 Transcript Received:", text);
+            
+            // Check translation only if target is not 'auto'
             const translated = await translateToTargetLanguage(text, targetLanguage);
             
-            // CONSOLE LOG 2: Translation result
             console.log(`🌍 Translation (to ${targetLanguage}):`, translated);
 
             const payload = {
@@ -261,19 +265,19 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 senderName: payload.senderName, text: payload.text, original: payload.original, ts: payload.ts
             }]);
 
+            // Send to ALL other participants
             await sendPayload(payload);
             
-            // CONSOLE LOG 3: Payload sent
             console.log("🚀 Subtitle Payload Sent:", payload);
         };
 
         rec.onerror = (e) => {
             console.warn("SR error", e);
-            if (e.error === 'network' || e.error === 'service-not-allowed') {
+            if (e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
                 console.log("Error detected, attempting restart...");
                 restartRecognition();
             } else if (e.error === 'not-allowed') {
-                 // The main reason why captions fail: Mic access denied
+                 // Microphone access denied
                  console.error("🎤 Microphone Access Denied for Speech Recognition. The user must grant permission.");
                  alert("Microphone access needed for Captions. Please check your browser settings.");
                  stopCaptions(); // Stop immediately if access is denied
@@ -283,6 +287,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         
         rec.onend = () => {
             console.log("SR ended, checking for auto-restart.");
+            // We use setTimeout/restartRecognition instead of calling start() directly
             restartRecognition();
         };
 
@@ -315,17 +320,18 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         if (!isMagicOn) {
             // Start Logic
             
-            // Mic Check
+            // 1. Ensure Mic is ON for Speech Recognition to work
             if (!meeting?.localParticipant?.micOn) {
-                alert("Please turn on your Microphone first to enable Live Captions/Speech Recognition.");
                 try { 
                     await meeting.toggleMic(); 
                     setMicOn(true); 
                 } catch(e) { 
                     console.warn("Auto-toggle mic failed:", e);
                 }
-                // Check again if mic is successfully on (browser might have asked for permission)
-                if (!meeting?.localParticipant?.micOn) return false; 
+                if (!meeting?.localParticipant?.micOn) {
+                    alert("Please turn on your Microphone first to enable Live Captions/Speech Recognition.");
+                    return false; 
+                }
             }
             
             const captionsStarted = await startCaptions(); // Tries to get mic permission for SR
@@ -383,6 +389,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     function handleIncomingMessage(msg) {
           try {
             let parsed = null;
+            // Parse the message payload from VideoSDK
             if (typeof msg === "string") parsed = JSON.parse(msg);
             else if (msg && typeof msg === "object") {
                 if (msg.payload && typeof msg.payload === "string") parsed = JSON.parse(msg.payload);
@@ -392,19 +399,16 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
             // --- Subtitle Handling ---
             if (parsed.type === "subtitle") {
-                // IMPORTANT: We only add if the sender is NOT the local user, 
-                // because the local user already added their own subtitle in rec.onresult
+                // *** MAIN FIX: Check if the message came from another participant ***
                 if (parsed.senderId !== meeting?.localParticipant?.id) {
                      setCaptions((prev) => [...prev, {
                         senderName: parsed.senderName || parsed.senderId || "Unknown",
-                        text: parsed.text || parsed.original || "",
+                        // IMPORTANT: We use the already translated text provided by the sender
+                        text: parsed.text || parsed.original || "", 
                         original: parsed.original || "",
                         ts: parsed.ts || new Date().toISOString()
                     }]);
                 }
-                
-                // Ensure subtitles from OTHERS are ALWAYS shown, regardless of isMagicOn status.
-
             } else if (parsed.type === "raise-hand") {
                 setRaiseHandSet((prev) => {
                     const next = new Set(prev);
@@ -417,7 +421,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 try { meeting.leave(); } catch (e) {}
             }
         } catch (e) {
-            // ignore
+            console.warn("Failed to process incoming message payload", e);
         }
     }
 
@@ -581,7 +585,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                         activeSpeakerId={meeting?.activeSpeakerId}
                         toggleFocus={toggleFocus}
                         isFocused={true}
-                        raiseHandSet={raiseHandSet} // Passing raiseHandSet to the tile
+                        raiseHandSet={raiseHandSet} 
                         />
                     </div>
                     ) : (
@@ -593,7 +597,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                             activeSpeakerId={meeting?.activeSpeakerId} 
                             toggleFocus={toggleFocus} 
                             isFocused={false} 
-                            raiseHandSet={raiseHandSet} // Passing raiseHandSet to the tile
+                            raiseHandSet={raiseHandSet} 
                         />
                         ))}
                     </div>
@@ -604,7 +608,9 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
                 {/* RIGHT: subtitles panel (20rem wide on large screens) */}
                 <aside className="bg-gray-800 text-white p-4 rounded-lg shadow-xl border border-gray-700 h-[80vh] flex flex-col">
-                <div className="flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
+                
+                {/* Fixed Header for Captions Panel */}
+                <div className="flex-shrink-0 flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                     <h3 className="text-xl font-bold text-pink-400">Live Captions {captionsOn && <span className="text-sm text-green-400">(Listening)</span>}</h3>
                     
                     <select
@@ -620,25 +626,27 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                     </select>
                 </div>
 
-                {/* Captions Feed */}
-                <div className="space-y-3 flex-grow overflow-y-auto custom-scrollbar">
+                {/* Captions Feed (Scrollable) */}
+                <div className="space-y-3 flex-grow overflow-y-auto custom-scrollbar pr-1"> {/* Added pr-1 for padding on right side scroll */}
                     {captions.length === 0 ? (
                     <div className="text-gray-500 p-4 text-center">Start AI Magic (Captions) to see live conversation.</div>
                     ) : (
                     captions.slice(-20).map((c, idx) => ( // Show only last 20 messages for performance
                         <div key={idx} className="p-3 bg-gray-700 rounded-lg border-l-4 border-pink-500 transition duration-300 hover:bg-gray-600">
                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
-                            <span className="font-semibold text-white">{c.senderName}</span>
+                            <span className="font-semibold text-white truncate">{c.senderName}</span>
                             <span>{new Date(c.ts).toLocaleTimeString()}</span>
                         </div>
-                        <div className="text-sm font-light italic text-gray-300">{c.original}</div>
-                        <div className="mt-1 text-md font-medium text-white">{c.text}</div>
+                        {/* Original Text - This is what the sender spoke */}
+                        <div className="text-sm font-light italic text-gray-300">{c.original}</div> 
+                        {/* Translated Text - This is the translation provided by the sender */}
+                        <div className="mt-1 text-md font-medium text-white">{c.text}</div> 
                         </div>
                     ))
                     )}
                 </div>
 
-                <div className="mt-4 pt-2 border-t border-gray-700">
+                <div className="mt-4 pt-2 border-t border-gray-700 flex-shrink-0">
                     <button onClick={() => { setCaptions([]); localStorage.removeItem('meeting_captions'); }} className="text-xs text-red-500 hover:text-red-400 transition duration-200">Clear saved subtitles</button>
                 </div>
                 </aside>
@@ -693,7 +701,6 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
             const ms = new MediaStream();
             ms.addTrack(micStream.track);
             audioRef.current.srcObject = ms;
-            // Only play if participant is not local, and if it's not muted globally
             audioRef.current.play().catch(() => {});
         }
     }, [micStream]);
