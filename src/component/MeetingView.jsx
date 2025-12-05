@@ -17,6 +17,7 @@ const LANGUAGE_OPTIONS = [
 
 // --- Custom Hooks ---
 
+// Local Storage Hook for persistence (जैसे, सबटाइटल क्लियर न करने पर बने रहें)
 function useLocalStorage(key, initial) {
     const [state, setState] = useState(() => {
         try {
@@ -98,7 +99,8 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         onParticipantJoined: (p) => console.log("🟢 Participant joined", p),
         onParticipantLeft: (p) => console.log("🔴 Participant left", p),
         onSpeakerChanged: (id) => console.log("🔊 Active speaker:", id),
-        onMessageReceived: (msg) => handleIncomingMessage(msg)
+        // यह मुख्य हैंडलर है जो पार्टिसिपेंट के मैसेज को प्राप्त करता है
+        onMessageReceived: (msg) => handleIncomingMessage(msg) 
     });
     
     // =====================================================================
@@ -111,7 +113,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         try {
             const q = encodeURIComponent(text);
             // This is the UN-OFFICIAL Google Translate API endpoint.
-            // It might fail or stop working without warning.
+            // Translation might fail if Google changes this endpoint.
             const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
             const res = await fetch(url);
             const data = await res.json();
@@ -125,13 +127,15 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     async function sendPayload(obj) {
         try {
             const s = JSON.stringify(obj);
-            await meeting.send(s);
+            // यह VideoSDK की मैसेजिंग लेयर है
+            await meeting.send(s); 
         } catch (e) {
             console.warn("meeting.send failed", e);
         }
     }
 
     // --- LOCAL SCREEN RECORDING LOGIC (Helper Functions) ---
+    // (Local Recording logic is unchanged, used as part of AI Magic)
     const stopLocalRecording = useCallback(() => {
         if (recorderRef.current && recorderRef.current.state !== 'inactive') {
             const tracks = recorderRef.current.stream.getTracks();
@@ -142,13 +146,11 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
     const startLocalRecording = useCallback(async () => {
         try {
-            // 1. Get Screen Stream (User must grant permission)
             const screenStream = await navigator.mediaDevices.getDisplayMedia({
                 video: true,
-                audio: true, // Capture system audio/mic if possible
+                audio: true,
             });
             
-            // 2. Start Local Recording using MediaRecorder API
             recorderRef.current = new MediaRecorder(screenStream);
             chunksRef.current = [];
             
@@ -191,23 +193,19 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         } catch (screenError) {
             console.warn("Screen share/Local Recording failed (permission denied or error)", screenError);
             setIsLocalRecording(false);
-            alert("Could not start screen download. Check if you granted screen sharing permission and HTTPS is used.");
             return false; 
         }
     }, [stopLocalRecording]);
-    // --- END LOCAL SCREEN RECORDING LOGIC ---
 
 
     // --- CAPTIONS LOGIC (Helper Functions) ---
     const restartRecognition = useCallback(() => {
-        // If captions were turned off while an error occurred, don't restart
         if (!captionsOn || !recognitionRef.current) return;
         
         try {
             recognitionRef.current.stop();
         } catch (e) {}
 
-        // Small delay before restart to avoid race conditions
         setTimeout(() => {
             if (captionsOn && recognitionRef.current) {
                  try {
@@ -234,8 +232,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         rec.continuous = true;
         rec.interimResults = false;
         
-        // IMPORTANT: We use "auto" to detect language, but you can hardcode for Hindi/English 
-        // to test specific languages better, e.g., rec.lang = "hi-IN";
+        // "auto" पर सेट है ताकि यह आपकी भाषा (हिंदी/इंग्लिश) को पहचानने की कोशिश करे
         rec.lang = "auto"; 
 
         rec.onresult = async (ev) => {
@@ -246,7 +243,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
             
             console.log("💬 Transcript Received:", text);
             
-            // Check translation only if target is not 'auto'
+            // ट्रांसलेशन लॉजिक
             const translated = await translateToTargetLanguage(text, targetLanguage);
             
             console.log(`🌍 Translation (to ${targetLanguage}):`, translated);
@@ -260,13 +257,13 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 ts: new Date().toISOString()
             };
 
-            // Local push so you see your own words immediately
+            // 1. Local push: आपको अपनी बात तुरंत दिखाने के लिए।
             setCaptions((prev) => [...prev, {
                 senderName: payload.senderName, text: payload.text, original: payload.original, ts: payload.ts
             }]);
 
-            // Send to ALL other participants
-            await sendPayload(payload);
+            // 2. Send to ALL other participants: पार्टिसिपेंट को आपकी बात भेजने के लिए।
+            await sendPayload(payload); 
             
             console.log("🚀 Subtitle Payload Sent:", payload);
         };
@@ -274,20 +271,17 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         rec.onerror = (e) => {
             console.warn("SR error", e);
             if (e.error === 'network' || e.error === 'service-not-allowed' || e.error === 'audio-capture') {
-                console.log("Error detected, attempting restart...");
                 restartRecognition();
             } else if (e.error === 'not-allowed') {
-                 // Microphone access denied
-                 console.error("🎤 Microphone Access Denied for Speech Recognition. The user must grant permission.");
+                 console.error("🎤 Microphone Access Denied for Speech Recognition.");
                  alert("Microphone access needed for Captions. Please check your browser settings.");
-                 stopCaptions(); // Stop immediately if access is denied
+                 stopCaptions(); 
                  return;
             }
         };
         
         rec.onend = () => {
             console.log("SR ended, checking for auto-restart.");
-            // We use setTimeout/restartRecognition instead of calling start() directly
             restartRecognition();
         };
 
@@ -318,9 +312,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         if (isCloudRecording) return alert("Please stop cloud recording before starting AI Magic.");
 
         if (!isMagicOn) {
-            // Start Logic
-            
-            // 1. Ensure Mic is ON for Speech Recognition to work
+            // Ensure Mic is ON
             if (!meeting?.localParticipant?.micOn) {
                 try { 
                     await meeting.toggleMic(); 
@@ -329,19 +321,18 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                     console.warn("Auto-toggle mic failed:", e);
                 }
                 if (!meeting?.localParticipant?.micOn) {
-                    alert("Please turn on your Microphone first to enable Live Captions/Speech Recognition.");
+                    alert("Please turn on your Microphone first to enable Live Captions.");
                     return false; 
                 }
             }
             
-            const captionsStarted = await startCaptions(); // Tries to get mic permission for SR
-            const recordingStarted = await startLocalRecording(); // Tries to get screen share permission
+            const captionsStarted = await startCaptions(); // Captions start
+            const recordingStarted = await startLocalRecording(); // Local Recording starts
 
             if (captionsStarted && recordingStarted) {
                 setIsMagicOn(true);
                 console.log("✨ AI Magic successfully started (Captions + Recording).");
             } else {
-                // Stop anything that might have partially started
                 if (captionsStarted) stopCaptions();
                 if (recordingStarted) stopLocalRecording();
                 setIsMagicOn(false);
@@ -360,7 +351,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
     // Combined cleanup function
     const stopAIMagic = useCallback(() => {
-        if (isMagicOn) { // Only run if it's currently on
+        if (isMagicOn) { 
             stopCaptions();
             stopLocalRecording();
             setIsMagicOn(false);
@@ -372,24 +363,13 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     // STEP 3: HANDLERS AND LIFECYCLE
     // =====================================================================
 
-    const participants = [...(meeting?.participants?.values?.() || [])];
-
-    function toggleFocus(participantId) {
-        setFocusedParticipantId(prev => (prev === participantId ? null : participantId));
-    }
-    
-    useEffect(() => {
-        localStorage.setItem("meeting_target_lang", targetLanguage);
-    }, [targetLanguage]);
-
     /**
      * @function handleIncomingMessage
-     * @description This is the CRITICAL function that ensures subtitles from OTHER participants are displayed.
+     * @description यह फंक्शन दूसरे पार्टिसिपेंट की बातचीत को कैप्चर करता है।
      */
     function handleIncomingMessage(msg) {
           try {
             let parsed = null;
-            // Parse the message payload from VideoSDK
             if (typeof msg === "string") parsed = JSON.parse(msg);
             else if (msg && typeof msg === "object") {
                 if (msg.payload && typeof msg.payload === "string") parsed = JSON.parse(msg.payload);
@@ -399,15 +379,16 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
             // --- Subtitle Handling ---
             if (parsed.type === "subtitle") {
-                // *** MAIN FIX: Check if the message came from another participant ***
-                if (parsed.senderId !== meeting?.localParticipant?.id) {
+                // *** FIX: यह चेक करें कि मैसेज खुद ने नहीं भेजा है। ***
+                if (parsed.senderId !== meeting?.localParticipant?.id) { 
                      setCaptions((prev) => [...prev, {
                         senderName: parsed.senderName || parsed.senderId || "Unknown",
-                        // IMPORTANT: We use the already translated text provided by the sender
+                        // IMPORTANT: पार्टिसिपेंट ने जो ट्रांसलेटेड टेक्स्ट भेजा, उसे दिखाओ
                         text: parsed.text || parsed.original || "", 
                         original: parsed.original || "",
                         ts: parsed.ts || new Date().toISOString()
                     }]);
+                    console.log(`✅ Received Subtitle from ${parsed.senderName}: ${parsed.text}`);
                 }
             } else if (parsed.type === "raise-hand") {
                 setRaiseHandSet((prev) => {
@@ -424,6 +405,18 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
             console.warn("Failed to process incoming message payload", e);
         }
     }
+
+    // --- Other Handlers (Join, Leave, Mic/Cam Toggle, etc.) are standard ---
+    const participants = [...(meeting?.participants?.values?.() || [])];
+
+    function toggleFocus(participantId) {
+        setFocusedParticipantId(prev => (prev === participantId ? null : participantId));
+    }
+    
+    useEffect(() => {
+        localStorage.setItem("meeting_target_lang", targetLanguage);
+    }, [targetLanguage]);
+
 
     async function handleJoinClick() {
         if (!name || !name.trim()) {
@@ -446,10 +439,8 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
             return;
         }
         
-        // --- Stop AI Magic and trigger download on leave ---
         if (isMagicOn) {
             stopAIMagic();
-            // We wait a moment for the 'onstop' event to fire and trigger download
             setTimeout(() => {
                 try { meeting.leave(); setJoined(false); setFocusedParticipantId(null); } catch (e) { console.warn(e); }
             }, 1000);
@@ -464,7 +455,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
              alert("Stopping cloud recording before ending the meeting...");
              await meeting.stopRecording();
         }
-        stopAIMagic(); // Stop and trigger download
+        stopAIMagic(); 
         await sendPayload({ type: "end-meeting", senderName: meeting?.localParticipant?.displayName || name, ts: new Date().toISOString() });
         try { if (typeof meeting.end === 'function') await meeting.end(); else meeting.leave(); } catch (e) { console.warn(e); }
     }
@@ -512,7 +503,8 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
                 
                 <div className="flex items-center gap-4">
-                    <div className="font-bold text-lg text-indigo-400">VideoConf.AI</div>
+                    <div className="font-bold text-lg text-indigo-400">AI Meeting 
+                        assistence</div>
                     <div className="text-sm text-gray-300">ID: {meetingId}</div>
                     <div className="text-sm font-medium hidden sm:block">
                       {isCloudRecording ? <span className="text-red-500 font-bold">🔴 CLOUD RECORDING</span> 
@@ -527,7 +519,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                     <button onClick={handleJoinClick} className="px-4 py-2 rounded-full bg-green-600 hover:bg-green-700 flex items-center gap-2 font-medium transition duration-200">Join Meeting</button>
                     ) : (
                     <>
-                        {/* --- AI Magic Button (Available to ALL) --- */}
+                        {/* --- AI Magic Button (MUST BE PRESSED by all for captions) --- */}
                         <button 
                             onClick={toggleAIMagic} 
                             disabled={isCloudRecording}
@@ -613,6 +605,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 <div className="flex-shrink-0 flex items-center justify-between mb-4 border-b border-gray-700 pb-2">
                     <h3 className="text-xl font-bold text-pink-400">Live Captions {captionsOn && <span className="text-sm text-green-400">(Listening)</span>}</h3>
                     
+                    {/* Language Dropdown for Target Translation */}
                     <select
                     value={targetLanguage}
                     onChange={(e) => setTargetLanguage(e.target.value)}
@@ -627,19 +620,19 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 </div>
 
                 {/* Captions Feed (Scrollable) */}
-                <div className="space-y-3 flex-grow overflow-y-auto custom-scrollbar pr-1"> {/* Added pr-1 for padding on right side scroll */}
+                <div className="space-y-3 flex-grow overflow-y-auto custom-scrollbar pr-1"> 
                     {captions.length === 0 ? (
                     <div className="text-gray-500 p-4 text-center">Start AI Magic (Captions) to see live conversation.</div>
                     ) : (
-                    captions.slice(-20).map((c, idx) => ( // Show only last 20 messages for performance
+                    captions.slice(-20).map((c, idx) => ( 
                         <div key={idx} className="p-3 bg-gray-700 rounded-lg border-l-4 border-pink-500 transition duration-300 hover:bg-gray-600">
                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
                             <span className="font-semibold text-white truncate">{c.senderName}</span>
                             <span>{new Date(c.ts).toLocaleTimeString()}</span>
                         </div>
-                        {/* Original Text - This is what the sender spoke */}
+                        {/* Original Text (पार्टिसिपेंट ने क्या बोला) */}
                         <div className="text-sm font-light italic text-gray-300">{c.original}</div> 
-                        {/* Translated Text - This is the translation provided by the sender */}
+                        {/* Translated Text (ट्रांसलेट होकर क्या आया) */}
                         <div className="mt-1 text-md font-medium text-white">{c.text}</div> 
                         </div>
                     ))
@@ -652,7 +645,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 </aside>
             </div>
 
-            {/* Name modal (No change) */}
+            {/* Name modal (if needed) */}
             {showNameModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
                 <div className="bg-gray-900 rounded-lg p-6 w-11/12 max-w-md border border-indigo-500 shadow-2xl">
@@ -682,7 +675,6 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
     const audioRef = useRef(null);
     const screenRef = useRef(null);
 
-    // Check for raise hand status
     const isHandRaised = raiseHandSet.has(participantId);
 
     // Video Stream Effect
@@ -769,9 +761,6 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
                 {!micOn && (
                     <IoIosMicOff className="text-red-500 text-base" title="Mic Off" />
                 )}
-
-                {/* Webcam Status (Optional: can add FiVideoOff icon here if webcamOn is false) */}
-                
             </div>
         </div>
         
