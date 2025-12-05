@@ -1,4 +1,3 @@
-// src/component/MeetingUI.jsx
 import React, { useEffect, useRef, useState, useCallback } from "react";
 import { useMeeting, useParticipant } from "@videosdk.live/react-sdk";
 import { FiMic, FiVideo, FiMonitor, FiVolume2 } from "react-icons/fi"; 
@@ -128,6 +127,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     async function sendPayload(obj) {
         try {
             const s = JSON.stringify(obj);
+            // Videosdk provides a generic 'send' for data messages
             await meeting.send(s); 
         } catch (e) {
             console.warn("meeting.send failed", e);
@@ -254,7 +254,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                 ts: new Date().toISOString()
             };
 
-            // 1. Local push
+            // 1. Local push (MUST PUSH HERE so you see your own captions immediately)
             setCaptions((prev) => [...prev, {
                 senderName: payload.senderName, text: payload.text, original: payload.original, ts: payload.ts
             }]);
@@ -363,38 +363,61 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     // =====================================================================
 
     function handleIncomingMessage(msg) {
-          try {
+        try {
             console.log("<-- onMessageReceived raw:", msg);
             let parsed = null;
-            if (typeof msg === "string") parsed = JSON.parse(msg);
-            else if (msg && typeof msg === "object") {
-                // Some SDKs wrap the payload inside msg.payload
-                if (msg.payload && typeof msg.payload === "string") {
-                    try { parsed = JSON.parse(msg.payload); } catch(e) { parsed = JSON.parse(JSON.stringify(msg.payload)); }
-                }
-                else parsed = msg;
+            
+            // --- FIX START: ROBUST PARSING FOR MESSAGES FROM OTHER PARTICIPANTS ---
+            let messageString = null;
+            
+            // 1. Check for standard SDK message structure: { message: '{"type": "...", ...}', senderId: '...' }
+            if (msg && typeof msg === 'object' && typeof msg.message === 'string') {
+                messageString = msg.message;
+            } 
+            // 2. Fallback: Check if the message is already a raw JSON string
+            else if (typeof msg === 'string') {
+                messageString = msg;
             }
-            if (!parsed) return;
+            
+            if (!messageString) {
+                console.warn("No parsable message string found in incoming message:", msg);
+                return;
+            }
+
+            // Try to parse the JSON string
+            try {
+                parsed = JSON.parse(messageString);
+            } catch (e) {
+                console.warn("Failed to parse message JSON string:", messageString, e);
+                return;
+            }
+            // --- FIX END ---
+
+            if (!parsed || !parsed.type) return;
+
 
             // --- Subtitle Handling ---
             if (parsed.type === "subtitle") {
                 // Ignore own subtitles robustly: check by senderId or senderName
-                const myId = meeting?.localParticipant?.id || meeting?.localParticipant?.clientId || null;
+                const myId = meeting?.localParticipant?.id || null;
+                const myClientId = meeting?.localParticipant?.clientId || null;
                 const myName = meeting?.localParticipant?.displayName || name || null;
 
-                // If it's from me, ignore (avoid echo). Use flexible checks because SDKs differ.
-                if (parsed.senderId && myId && `${parsed.senderId}` === `${myId}`) {
-                    // it's ours — ignore
-                    return;
+                // 🚨 ECHO PREVENTION: Check if the incoming message is an echo of my own message
+                if (parsed.senderId && (parsed.senderId === myId || parsed.senderId === myClientId)) {
+                    console.log("🚨 Ignoring own echoed subtitle payload (already added locally).");
+                    return; 
                 }
+                // Fallback check (less reliable, but kept for robustness)
                 if (parsed.senderName && myName && parsed.senderName === myName) {
-                    // could be ours — ignore
+                    console.log("🚨 Ignoring own echoed subtitle payload (by name fallback).");
                     return;
                 }
+                // 🚨 END ECHO CHECK
 
                 // Push subtitle (other participant's speech)
                 setCaptions((prev) => [...prev, {
-                    senderName: parsed.senderName || parsed.senderId || "Unknown",
+                    senderName: parsed.senderName || msg.senderName || parsed.senderId || "Unknown",
                     text: parsed.text || parsed.original || "",
                     original: parsed.original || "",
                     ts: parsed.ts || new Date().toISOString()
