@@ -15,9 +15,16 @@ const LANGUAGE_OPTIONS = [
     { code: 'auto', name: 'Original (No Translation)' },
 ];
 
-// --- Custom Hooks ---
+// Map short language codes to SpeechRecognition/Translate friendly tags
+const LANG_CODE_MAP = {
+  en: 'en-US',
+  hi: 'hi-IN',
+  es: 'es-ES',
+  fr: 'fr-FR',
+  de: 'de-DE',
+};
 
-// Local Storage Hook for persistence (जैसे, सबटाइटल क्लियर न करने पर बने रहें)
+// --- Local Storage Hook for persistence ---
 function useLocalStorage(key, initial) {
     const [state, setState] = useState(() => {
         try {
@@ -35,10 +42,7 @@ function useLocalStorage(key, initial) {
     return [state, setState];
 }
 
-// --- Main Component ---
-
 export default function MeetingUI({ meetingId, token, isAdmin = false }) {
-    
     // UI state
     const [joined, setJoined] = useState(false);
     const [showNameModal, setShowNameModal] = useState(false);
@@ -73,7 +77,6 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     // raise-hand set
     const [raiseHandSet, setRaiseHandSet] = useState(new Set());
 
-
     // =====================================================================
     // STEP 1: DEFINE THE MEETING OBJECT (VideoSDK)
     // =====================================================================
@@ -99,7 +102,6 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         onParticipantJoined: (p) => console.log("🟢 Participant joined", p),
         onParticipantLeft: (p) => console.log("🔴 Participant left", p),
         onSpeakerChanged: (id) => console.log("🔊 Active speaker:", id),
-        // यह मुख्य हैंडलर है जो पार्टिसिपेंट के मैसेज को प्राप्त करता है
         onMessageReceived: (msg) => handleIncomingMessage(msg) 
     });
     
@@ -109,11 +111,10 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
 
     // --- UTILITY FUNCTIONS ---
     async function translateToTargetLanguage(text, targetLang) {
-        if (targetLang === 'auto') return text;
+        if (!text) return text;
+        if (targetLang === 'auto') return text; // don't translate
         try {
             const q = encodeURIComponent(text);
-            // This is the UN-OFFICIAL Google Translate API endpoint.
-            // Translation might fail if Google changes this endpoint.
             const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${targetLang}&dt=t&q=${q}`;
             const res = await fetch(url);
             const data = await res.json();
@@ -127,7 +128,6 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     async function sendPayload(obj) {
         try {
             const s = JSON.stringify(obj);
-            // यह VideoSDK की मैसेजिंग लेयर है
             await meeting.send(s); 
         } catch (e) {
             console.warn("meeting.send failed", e);
@@ -135,11 +135,10 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     }
 
     // --- LOCAL SCREEN RECORDING LOGIC (Helper Functions) ---
-    // (Local Recording logic is unchanged, used as part of AI Magic)
     const stopLocalRecording = useCallback(() => {
         if (recorderRef.current && recorderRef.current.state !== 'inactive') {
             const tracks = recorderRef.current.stream.getTracks();
-            tracks.forEach(track => track.stop()); // Stop stream tracks too
+            tracks.forEach(track => track.stop());
             recorderRef.current.stop();
         }
     }, []);
@@ -197,14 +196,10 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         }
     }, [stopLocalRecording]);
 
-
     // --- CAPTIONS LOGIC (Helper Functions) ---
     const restartRecognition = useCallback(() => {
         if (!captionsOn || !recognitionRef.current) return;
-        
-        try {
-            recognitionRef.current.stop();
-        } catch (e) {}
+        try { recognitionRef.current.stop(); } catch (e) {}
 
         setTimeout(() => {
             if (captionsOn && recognitionRef.current) {
@@ -215,7 +210,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                      console.warn("Failed to restart SR after stop:", e);
                  }
             }
-        }, 100); 
+        }, 150);
 
     }, [captionsOn]);
     
@@ -231,38 +226,40 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         const rec = new SR();
         rec.continuous = true;
         rec.interimResults = false;
-        
-        // "auto" पर सेट है ताकि यह आपकी भाषा (हिंदी/इंग्लिश) को पहचानने की कोशिश करे
-        rec.lang = "auto"; 
 
+        // Use a proper locale tag; 'auto' is not a valid value for rec.lang.
+        const langTag = targetLanguage === 'auto' ? (navigator.language || 'en-US') : (LANG_CODE_MAP[targetLanguage] || targetLanguage);
+        rec.lang = langTag;
+        
         rec.onresult = async (ev) => {
             const last = ev.results[ev.results.length - 1];
             const text = last[0].transcript.trim();
-            
             if (!text) return;
-            
+
             console.log("💬 Transcript Received:", text);
-            
-            // ट्रांसलेशन लॉजिक
-            const translated = await translateToTargetLanguage(text, targetLanguage);
-            
+
+            // Translate if necessary
+            const translated = await translateToTargetLanguage(text, targetLanguage === 'auto' ? 'auto' : targetLanguage);
             console.log(`🌍 Translation (to ${targetLanguage}):`, translated);
+
+            // Ensure senderId exists and is stable
+            const localId = meeting?.localParticipant?.id || meeting?.localParticipant?.clientId || `local-${Date.now()}`;
 
             const payload = {
                 type: "subtitle",
-                senderId: meeting?.localParticipant?.id,
+                senderId: localId,
                 senderName: meeting?.localParticipant?.displayName || name || "You",
                 original: text,
                 text: translated,
                 ts: new Date().toISOString()
             };
 
-            // 1. Local push: आपको अपनी बात तुरंत दिखाने के लिए।
+            // 1. Local push
             setCaptions((prev) => [...prev, {
                 senderName: payload.senderName, text: payload.text, original: payload.original, ts: payload.ts
             }]);
 
-            // 2. Send to ALL other participants: पार्टिसिपेंट को आपकी बात भेजने के लिए।
+            // 2. Send to ALL other participants
             await sendPayload(payload); 
             
             console.log("🚀 Subtitle Payload Sent:", payload);
@@ -286,6 +283,7 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         };
 
         try {
+            // Start recognition
             rec.start();
             recognitionRef.current = rec;
             setCaptionsOn(true);
@@ -312,11 +310,13 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         if (isCloudRecording) return alert("Please stop cloud recording before starting AI Magic.");
 
         if (!isMagicOn) {
-            // Ensure Mic is ON
+            // Ensure Mic is ON — try to toggle if it's off
             if (!meeting?.localParticipant?.micOn) {
                 try { 
                     await meeting.toggleMic(); 
-                    setMicOn(true); 
+                    // small delay for SDK to update
+                    await new Promise(res => setTimeout(res, 200));
+                    setMicOn(Boolean(meeting?.localParticipant?.micOn));
                 } catch(e) { 
                     console.warn("Auto-toggle mic failed:", e);
                 }
@@ -358,38 +358,50 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         }
     }, [isMagicOn, stopLocalRecording]);
 
-
     // =====================================================================
     // STEP 3: HANDLERS AND LIFECYCLE
     // =====================================================================
 
-    /**
-     * @function handleIncomingMessage
-     * @description यह फंक्शन दूसरे पार्टिसिपेंट की बातचीत को कैप्चर करता है।
-     */
     function handleIncomingMessage(msg) {
           try {
+            console.log("<-- onMessageReceived raw:", msg);
             let parsed = null;
             if (typeof msg === "string") parsed = JSON.parse(msg);
             else if (msg && typeof msg === "object") {
-                if (msg.payload && typeof msg.payload === "string") parsed = JSON.parse(msg.payload);
+                // Some SDKs wrap the payload inside msg.payload
+                if (msg.payload && typeof msg.payload === "string") {
+                    try { parsed = JSON.parse(msg.payload); } catch(e) { parsed = JSON.parse(JSON.stringify(msg.payload)); }
+                }
                 else parsed = msg;
             }
             if (!parsed) return;
 
             // --- Subtitle Handling ---
             if (parsed.type === "subtitle") {
-                // *** FIX: यह चेक करें कि मैसेज खुद ने नहीं भेजा है। ***
-                if (parsed.senderId !== meeting?.localParticipant?.id) { 
-                     setCaptions((prev) => [...prev, {
-                        senderName: parsed.senderName || parsed.senderId || "Unknown",
-                        // IMPORTANT: पार्टिसिपेंट ने जो ट्रांसलेटेड टेक्स्ट भेजा, उसे दिखाओ
-                        text: parsed.text || parsed.original || "", 
-                        original: parsed.original || "",
-                        ts: parsed.ts || new Date().toISOString()
-                    }]);
-                    console.log(`✅ Received Subtitle from ${parsed.senderName}: ${parsed.text}`);
+                // Ignore own subtitles robustly: check by senderId or senderName
+                const myId = meeting?.localParticipant?.id || meeting?.localParticipant?.clientId || null;
+                const myName = meeting?.localParticipant?.displayName || name || null;
+
+                // If it's from me, ignore (avoid echo). Use flexible checks because SDKs differ.
+                if (parsed.senderId && myId && `${parsed.senderId}` === `${myId}`) {
+                    // it's ours — ignore
+                    return;
                 }
+                if (parsed.senderName && myName && parsed.senderName === myName) {
+                    // could be ours — ignore
+                    return;
+                }
+
+                // Push subtitle (other participant's speech)
+                setCaptions((prev) => [...prev, {
+                    senderName: parsed.senderName || parsed.senderId || "Unknown",
+                    text: parsed.text || parsed.original || "",
+                    original: parsed.original || "",
+                    ts: parsed.ts || new Date().toISOString()
+                }]);
+
+                console.log(`✅ Received Subtitle from ${parsed.senderName || parsed.senderId}: ${parsed.text || parsed.original}`);
+
             } else if (parsed.type === "raise-hand") {
                 setRaiseHandSet((prev) => {
                     const next = new Set(prev);
@@ -406,7 +418,6 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
         }
     }
 
-    // --- Other Handlers (Join, Leave, Mic/Cam Toggle, etc.) are standard ---
     const participants = [...(meeting?.participants?.values?.() || [])];
 
     function toggleFocus(participantId) {
@@ -464,13 +475,16 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
     async function toggleMic() {
         try {
             await meeting.toggleMic();
-            setMicOn((s) => !s);
+            // allow SDK state to update
+            await new Promise(res => setTimeout(res, 150));
+            setMicOn(Boolean(meeting?.localParticipant?.micOn));
         } catch (e) { console.warn(e); }
     }
     async function toggleCam() {
         try {
             await meeting.toggleWebcam();
-            setCamOn((s) => !s);
+            await new Promise(res => setTimeout(res, 150));
+            setCamOn(Boolean(meeting?.localParticipant?.webcamOn));
         } catch (e) { console.warn(e); }
     }
 
@@ -624,15 +638,13 @@ export default function MeetingUI({ meetingId, token, isAdmin = false }) {
                     {captions.length === 0 ? (
                     <div className="text-gray-500 p-4 text-center">Start AI Magic (Captions) to see live conversation.</div>
                     ) : (
-                    captions.slice(-20).map((c, idx) => ( 
+                    captions.slice(-200).map((c, idx) => ( 
                         <div key={idx} className="p-3 bg-gray-700 rounded-lg border-l-4 border-pink-500 transition duration-300 hover:bg-gray-600">
                         <div className="flex justify-between items-center text-xs text-gray-400 mb-1">
                             <span className="font-semibold text-white truncate">{c.senderName}</span>
                             <span>{new Date(c.ts).toLocaleTimeString()}</span>
                         </div>
-                        {/* Original Text (पार्टिसिपेंट ने क्या बोला) */}
                         <div className="text-sm font-light italic text-gray-300">{c.original}</div> 
-                        {/* Translated Text (ट्रांसलेट होकर क्या आया) */}
                         <div className="mt-1 text-md font-medium text-white">{c.text}</div> 
                         </div>
                     ))
@@ -679,37 +691,58 @@ function ParticipantTile({ participantId, activeSpeakerId, toggleFocus, isFocuse
 
     // Video Stream Effect
     useEffect(() => {
-        if (webcamStream && videoRef.current) {
-            const ms = new MediaStream();
-            ms.addTrack(webcamStream.track);
-            videoRef.current.srcObject = ms;
-            videoRef.current.play().catch(() => {});
-        }
+        try {
+            if (webcamStream && videoRef.current) {
+                const ms = new MediaStream();
+                // some SDKs provide .track, others provide the MediaStream directly
+                if (webcamStream.track) ms.addTrack(webcamStream.track);
+                else if (webcamStream instanceof MediaStream) {
+                    videoRef.current.srcObject = webcamStream;
+                    videoRef.current.play().catch(() => {});
+                    return;
+                }
+                videoRef.current.srcObject = ms;
+                videoRef.current.play().catch(() => {});
+            }
+        } catch(e) { console.warn('video attach failed', e); }
     }, [webcamStream]);
 
     // Audio Stream Effect
     useEffect(() => {
-        if (micStream && audioRef.current) {
-            const ms = new MediaStream();
-            ms.addTrack(micStream.track);
-            audioRef.current.srcObject = ms;
-            audioRef.current.play().catch(() => {});
-        }
+        try {
+            if (micStream && audioRef.current) {
+                const ms = new MediaStream();
+                if (micStream.track) ms.addTrack(micStream.track);
+                else if (micStream instanceof MediaStream) {
+                    audioRef.current.srcObject = micStream;
+                    audioRef.current.play().catch(() => {});
+                    return;
+                }
+                audioRef.current.srcObject = ms;
+                audioRef.current.play().catch(() => {});
+            }
+        } catch(e) { console.warn('audio attach failed', e); }
     }, [micStream]);
 
     // Screen Share Stream Effect
     useEffect(() => {
-        if (screenShareStream && screenRef.current) {
-            const ms = new MediaStream();
-            ms.addTrack(screenShareStream.track);
-            screenRef.current.srcObject = ms;
-            screenRef.current.play().catch(() => {});
-        }
+        try {
+            if (screenShareStream && screenRef.current) {
+                const ms = new MediaStream();
+                if (screenShareStream.track) ms.addTrack(screenShareStream.track);
+                else if (screenShareStream instanceof MediaStream) {
+                    screenRef.current.srcObject = screenShareStream;
+                    screenRef.current.play().catch(() => {});
+                    return;
+                }
+                screenRef.current.srcObject = ms;
+                screenRef.current.play().catch(() => {});
+            }
+        } catch(e) { console.warn('screen attach failed', e); }
     }, [screenShareStream]);
 
     const isActive = activeSpeakerId === participantId;
     
-    // UI Enhancements for Focus Mode
     const tileClasses = `
         bg-black p-1 rounded-lg relative border cursor-pointer transition-all duration-300 shadow-lg
         ${isFocused ? 'h-full w-full' : 'h-64'} 
